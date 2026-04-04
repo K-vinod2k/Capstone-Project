@@ -1,5 +1,0 @@
-{
-  "name": "Voice to Robot Movement Pipeline",
-  "description": "Generative AI Robotics Dashboard combining Text Prompts, LLM Output, GenAI Video, and 3D Simulated Robot rendering.",
-  "requestFramePermissions": []
-}

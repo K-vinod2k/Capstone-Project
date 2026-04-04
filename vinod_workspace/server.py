@@ -50,12 +50,20 @@ async def run_pipeline(req: PipelineRequest):
         raise HTTPException(status_code=400, detail=physics["reasoning"])
 
     # 3. Video generation
-    if not video_ready:
-        raise HTTPException(status_code=500, detail="No video backend — set FAL_KEY or COLAB_URL.")
-    result = generate_video(gesture_desc + PHYSICAL_BOOSTER, duration=6, resolution="720p")
-    if not result.get("success"):
-        raise HTTPException(status_code=500, detail=result.get("error"))
-    ref_video_b64 = result["video_base64"]
+    if detected_persona == "Hulk" or "smash" in gesture_desc.lower() or True: # Defaulting to local Hulk proxy to save API costs for now
+        # Phase 2 Static Cache Intercept
+        hulk_vid_path = Path(__file__).parent / "Phase_2" / "hulk_smash_static.mp4"
+        if hulk_vid_path.exists():
+            ref_video_b64 = get_base64_video(str(hulk_vid_path))
+        else:
+            ref_video_b64 = "" # fallback if missing
+    else:
+        if not video_ready:
+            raise HTTPException(status_code=500, detail="No video backend — set FAL_KEY or COLAB_URL.")
+        result = generate_video(gesture_desc + PHYSICAL_BOOSTER, duration=6, resolution="720p")
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error"))
+        ref_video_b64 = result["video_base64"]
 
     # 4. Motion — load pre-computed G1 demo motion
     DEMO_PKL = Path(__file__).parent / "output" / "2026-03-12_07-07-09.pkl"
@@ -78,7 +86,26 @@ async def run_pipeline(req: PipelineRequest):
         "sim_to_real_safe": sim_to_real_result.get("is_safe_for_real_hardware", True),
         "sim_to_real_reasoning": sim_to_real_result.get("reasoning", "Verification complete."),
     }
+class VlawSyncRequest(BaseModel):
+    timestamp: str
+    failure_reason: str
+    telemetry_buffer: list
 
+@app.post("/vlaw_sim_sync")
+async def vlaw_sim_sync(req: VlawSyncRequest):
+    print(f"[VLAW] Received RL Simulation Failure at {req.timestamp}")
+    print(f"[VLAW] Reason: {req.failure_reason}")
+    
+    hulk_vid_path = Path(__file__).parent / "Phase_2" / "hulk_smash_static.mp4"
+    if not hulk_vid_path.exists():
+        raise HTTPException(status_code=404, detail="Recovery static video not found.")
+        
+    print("[VLAW] Routing static Hulk recovery video back to RL Pipeline!")
+    return {
+        "status": "Success",
+        "action": "Recovery video sent",
+        "video_proxy": str(hulk_vid_path)
+    }
 
 if __name__ == "__main__":
     import uvicorn
