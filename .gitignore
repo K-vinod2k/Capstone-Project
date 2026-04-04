@@ -1,0 +1,27 @@
+# Virtual Environments
+.venv/
+capstone_env/
+venv/
+ENV/
+
+# Python
+__pycache__/
+*.pyc
+
+# IDEs / macOS
+.DS_Store
+.vscode/
+.idea/
+.claude/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Media / Big Models
+*.mp4
+*.pkl
+output/
+dataset/
+models/

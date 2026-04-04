@@ -1,0 +1,60 @@
+--- Page 1 ---
+Voice to Robot Movement Pipeline
+WhisperV3 - Voice to Text
+https://github.com/openai/whisper
+Video2robot - Text to Robot Motion
+https://github.com/AIM-Intelligence/video2robot
+
+
+
+--- Page 2 ---
+Roleplay Mode: Adding Personas to Robots
+Case 1: No mention of Character: Chooses a 
+generic hero pose
+Case 2: Mention of Character - Chooses 
+signature pose of the mentioned character
+Roleplay Prompt
+“Oh No, I’m in Danger!”
+LLM w/ Persona reply
+“Don't worry, I’ll Save you”
+Robot Pose Appropriate to Response
+Guides / Instructions For character
+i.e. Act like Iron Man
+
+
+--- Page 3 ---
+Roleplay Pipeline
+Choose a 
+Persona
+I.e. Iron Man
+LLM + Crafting Custom 
+Personas Promt Injection
+Create persona based on 
+desc.
+Roleplay 
+Prompt:
+“Oh No, I’m in 
+Danger!”
+LLM Response in Character:
+i.e. “Don’t worry, I’ll Save you!”
+Gesture Desc. based on response
+i.e. “Don’t worry, I’ll Save you!”
+Gesture Output with video2robot
+
+
+
+--- Page 4 ---
+Challenges
+- Motion can be generated from video but may not work in the real world (may 
+fall over, lost balance, etc)
+- Transition from current robot pose to requested pose / motion
+
+
+
+--- Page 5 ---
+Text to Video Models; 
+1. Veo 3.1
+2. Seeddance 2.0
+3. ByteDance by disney ( latest release) 
+
+

@@ -1,0 +1,63 @@
+# ── SECRETS (NEVER commit) ────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+capstone_env/          # local virtualenv
+venv/
+env/
+ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+
+# ── MuJoCo / Sim Outputs ─────────────────────────────────────────────────────
+MUJOCO_LOG.TXT
+*.mp4
+*.wav
+*.webm
+
+# ── Node / Frontend ───────────────────────────────────────────────────────────
+UI/node_modules/
+UI/build/
+UI/dist/
+UI/coverage/
+UI/.env*
+!UI/.env.example
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ── Editors ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Logs & Debug ──────────────────────────────────────────────────────────────
+*.log
+server_log.txt
+
+# ── Large / Generated assets ─────────────────────────────────────────────────
+*.zip
+build_cache/
+
+# ── Submodules / local tools ──────────────────────────────────────────────────
+unitree_mujoco/
+whisper/
+
+# ── Output / pkl motion files ─────────────────────────────────────────────────
+output/
+*.pkl
+
+# ── Claude / skill files ──────────────────────────────────────────────────────
+.claude/
+*.skill
