@@ -52,7 +52,7 @@ async def run_pipeline(req: PipelineRequest):
     # 3. Video generation
     if detected_persona == "Hulk" or "smash" in gesture_desc.lower() or True: # Defaulting to local Hulk proxy to save API costs for now
         # Phase 2 Static Cache Intercept
-        hulk_vid_path = Path(__file__).parent / "Phase_2" / "hulk_smash_static.mp4"
+        hulk_vid_path = Path(__file__).parent / "hulk_smash_static.mp4"
         if hulk_vid_path.exists():
             ref_video_b64 = get_base64_video(str(hulk_vid_path))
         else:
@@ -96,7 +96,7 @@ async def vlaw_sim_sync(req: VlawSyncRequest):
     print(f"[VLAW] Received RL Simulation Failure at {req.timestamp}")
     print(f"[VLAW] Reason: {req.failure_reason}")
     
-    hulk_vid_path = Path(__file__).parent / "Phase_2" / "hulk_smash_static.mp4"
+    hulk_vid_path = Path(__file__).parent / "hulk_smash_static.mp4"
     if not hulk_vid_path.exists():
         raise HTTPException(status_code=404, detail="Recovery static video not found.")
         

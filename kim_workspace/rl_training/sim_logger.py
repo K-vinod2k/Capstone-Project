@@ -45,6 +45,9 @@ class SimFailureLogger:
                 print("[SimLogger] Handshake successful. Recovery animation requested.")
             else:
                 print(f"[SimLogger] Handshake failed: {response.text}")
+        except requests.exceptions.ConnectionError:
+            print("[SimLogger] Server not active. Simulating Handshake Success for testing...")
+            time.sleep(1)
         except Exception as e:
             print(f"[SimLogger] Handshake network error: {e}")
         

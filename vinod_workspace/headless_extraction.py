@@ -11,7 +11,7 @@ except ImportError:
     print("WARNING: PromptHMR environment not active. Please run inside the 'phmr' conda env.")
 
 def extract_hulk_kinematics():
-    video_path = Path(__file__).parent.parent / "Phase_2" / "hulk_smash_static.mp4"
+    video_path = Path(__file__).parent / "hulk_smash_static.mp4"
     output_pkl = Path(__file__).parent / "hulk_kinematics.pkl"
     
     if not video_path.exists():
