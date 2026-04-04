@@ -145,7 +145,8 @@ class UnitreeSdk2Bridge:
     def LowCmdHandler(self, msg: LowCmd_):
         if self.mj_data != None:
             for i in range(self.num_motor):
-                self.mj_data.ctrl[i] = (
+                # H2 KPOP Fix: Calculate desired torque and physically clip it
+                desired_tau = (
                     msg.motor_cmd[i].tau
                     + msg.motor_cmd[i].kp
                     * (msg.motor_cmd[i].q - self.mj_data.sensordata[i])
@@ -155,6 +156,7 @@ class UnitreeSdk2Bridge:
                         - self.mj_data.sensordata[i + self.num_motor]
                     )
                 )
+                self.mj_data.ctrl[i] = np.clip(desired_tau, -35.0, 35.0)
 
     def PublishLowState(self):
         if self.mj_data != None:
