@@ -7,10 +7,12 @@ from pathlib import Path
 
 def preview_hulk():
     # 1. Locate the physical G1 model XML
-    g1_xml = Path(__file__).parent.parent / "kim_workspace" / "hardware_deployment" / "unitree_mujoco" / "unitree_robots" / "g1" / "g1.xml"
+    g1_xml = Path(__file__).parent / "video2robot" / "third_party" / "GMR" / "assets" / "unitree_g1" / "g1_mocap_29dof.xml"
+    if not g1_xml.exists():
+        g1_xml = Path(__file__).parent / "video2robot" / "third_party" / "GMR" / "assets" / "unitree_g1" / "g1_mocap_29dof_with_hands.xml"
+        
     if not g1_xml.exists():
         print(f"Error: Could not find G1 XML at {g1_xml}")
-        print("Make sure you didn't delete the hardware_deployment folder!")
         return
 
     try:
@@ -46,9 +48,10 @@ def preview_hulk():
                 if not viewer.is_running():
                     break
                     
-                # Assuming 35 DOF matches the Unitree motor schema order
+                # Assuming 29 to 35 DOF matches the Unitree motor schema order
                 # qpos[0:7] is the root free joint (x, y, z, q1, q2, q3, q4)
-                data.qpos[7:42] = frame[:35] 
+                dof_len = len(data.qpos) - 7
+                data.qpos[7:] = frame[:dof_len] 
                 
                 # We forward kinematics (mj_kinematics) instead of mj_step so it acts as 
                 # a pure visual pose-player rather than a physical falling ragdoll.
