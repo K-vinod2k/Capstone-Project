@@ -1,6 +1,5 @@
 # Unitree G1 (23-DOF) Isaac Lab Training Suite
 
-> **🚨 ATTENTION KIM: GLOBAL ARCHITECTURE HAS SHIFTED 🚨**
 > The compute boundary has been radically redefined. You are now the sole owner of the entire VLAW GenAI extraction pipeline because the Mac cannot process it within latency bounds.
 > **READ `VLAW_ARCHITECTURE_MEMO.md` IMMEDIATELY BEFORE PROCEEDING.**
 
