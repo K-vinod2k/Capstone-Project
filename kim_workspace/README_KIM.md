@@ -1,9 +1,7 @@
 # Unitree G1 (23-DOF) Isaac Lab Training Suite
 
-> The compute boundary has been radically redefined. You are now the sole owner of the entire VLAW GenAI extraction pipeline because the Mac cannot process it within latency bounds.
-> **READ `VLAW_ARCHITECTURE_MEMO.md` IMMEDIATELY BEFORE PROCEEDING.**
-
-> **For Kim (GPU Training Coordinator)**: This directory contains the configuration and foundational scripts needed to run a Sim-to-Real Reinforcement Learning (RL) training environment for the 23-DOF Unitree G1 robot in NVIDIA Isaac Lab. This policy ensures the robot doesn't fall over when tracking video-generated poses.
+> **Note**: This directory contains the configuration and foundational scripts needed to run a Sim-to-Real Reinforcement Learning (RL) training environment for the 23-DOF Unitree G1 robot in NVIDIA Isaac Lab.
+> *See `VLAW_ARCHITECTURE_MEMO.md` for the latest update on GPU workload assignment for the VLAW loop.*
 
 ## Prerequisites
 1. **Linux OS** (Ubuntu 22.04 recommended).
