@@ -27,7 +27,7 @@ if __name__ == "__main__":
 
     # Models
     load_dotenv()
-    HF_TOKEN = os.getenv('HF_TOKEN')
+    HF_TOKEN = os.getenv('HF_TOKEN') # Or use your own huggingface API Key
     persona = RobotPersona(persona, movement_directory)
     stt = STT()
     stream = sd.InputStream(samplerate=stt.SAMPLERATE, 
