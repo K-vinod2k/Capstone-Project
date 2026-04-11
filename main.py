@@ -1,6 +1,7 @@
 from kim_workspace.robot_persona.src import RobotPersona
 from kim_workspace.stt.src import STT
 import sounddevice as sd
+from dotenv import load_dotenv
 import os
 
 def pickle_to_movement(path):
