@@ -45,6 +45,7 @@ class RobotPersona:
     """
     def __init__(self, persona, movement_directory):
         self.persona = persona
+        self.movement_directory = movement_directory
         self.search_model = SemanticSearch(movement_directory=movement_directory)
         self.pipe = pipeline("text-generation",
                              model="google/gemma-3-1b-it", 
@@ -68,7 +69,7 @@ class RobotPersona:
 
         return {
             "text": llm_output['content'],
-            "gesture": self.search_model.query(input_text)
+            "gesture": os.path.join(self.movement_directory, self.search_model.query(input_text + " " + llm_output['content']))
         }
 
 if __name__ == "__main__":
