@@ -2,19 +2,22 @@ import numpy as np
 import sounddevice as sd
 from faster_whisper import WhisperModel
 import queue
+import torch
 
 class STT:
     def __init__(self):
         # --- Configuration ---
         MODEL_SIZE = "base"
-        DEVICE = "cuda"  # or "cpu"
-        COMPUTE_TYPE = "float16" 
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        COMPUTE_TYPE = "float16" if device == "cuda" else "int8"
         self.SAMPLERATE = 16000
         self.SILENCE_DURATION = 1.5  # Seconds of silence before "ending" a sentence
         self.SILENCE_THRESHOLD = 0.01 # Volume threshold (adjust based on your mic)
 
         # --- Initialize ---
-        self.model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
+        self.model = WhisperModel(MODEL_SIZE, device=device, compute_type=COMPUTE_TYPE)
         self.audio_queue = queue.Queue()
         self.audio_buffer = []
 
