@@ -1,0 +1,7 @@
+--extra-index-url https://download.pytorch.org/whl/cu126
+dotenv
+torch
+transformers
+huggingface_hub
+faiss-cpu
+sentence-transformers
