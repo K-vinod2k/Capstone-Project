@@ -16,5 +16,5 @@ After completing the virtual environment installation, open the `.env` file and 
 The `main.py` file contains the `RobotPersona` class, which is responsible for converting user prompts into LLM responses and corresponding gestures. For Demo Usage in the virtual environment:
 
 ```
-python main.py
+python src.py
 ```
