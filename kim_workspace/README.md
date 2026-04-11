@@ -8,7 +8,7 @@ git clone https://github.com/K-vinod2k/Capstone-Project/
 cd Capstone-Project
 ```
 
-Download the temporary .env file to the main folder
+Download the [temporary .env file](https://drive.google.com/file/d/1z1053VQ-X20pIzJtvR-iJOPEY_5puEVi/view?usp=drive_link) to the main folder (do not share with others)
 
 Create a virtual environment:
 ```
