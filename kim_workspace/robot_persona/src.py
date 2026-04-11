@@ -47,9 +47,13 @@ class RobotPersona:
         self.persona = persona
         self.movement_directory = movement_directory
         self.search_model = SemanticSearch(movement_directory=movement_directory)
+
+        device = "mps" if torch.backends.mps.is_available() else "cpu"
+        device = "cuda" if torch.cuda.is_available() else device
+
         self.pipe = pipeline("text-generation",
                              model="google/gemma-3-1b-it", 
-                             device="cuda",
+                             device=device,
                              dtype=torch.bfloat16)
         
         self.messages = [[{"role": "system",
@@ -79,6 +83,7 @@ if __name__ == "__main__":
     movement_directory = './movements'
 
     # Models
+    load_dotenv()
     HF_TOKEN = os.getenv('HF_TOKEN')
     model = RobotPersona(persona, movement_directory)
 
