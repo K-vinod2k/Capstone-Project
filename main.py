@@ -26,6 +26,7 @@ if __name__ == "__main__":
     movement_directory = './kim_workspace/movements'
 
     # Models
+    load_dotenv()
     HF_TOKEN = os.getenv('HF_TOKEN')
     persona = RobotPersona(persona, movement_directory)
     stt = STT()
