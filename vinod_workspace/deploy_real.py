@@ -214,6 +214,7 @@ def main():
     parser = argparse.ArgumentParser(description="Full-Body 500Hz PD Kinematic Deployment")
     parser.add_argument("--pkl", required=True, help="Path to .pkl array file")
     parser.add_argument("--iface", default="lo", help="'lo' for sim testing, 'eth0' for real hardware")
+    parser.add_argument("--domain", type=int, default=0, help="DDS Domain ID (default: 0 for real G1)")
     parser.add_argument("--speed", type=float, default=1.0, help="Speed multiplier (0.5 = half speed)")
     args = parser.parse_args()
 
@@ -230,7 +231,7 @@ def main():
 
     print(f"Payload target acquired: {len(frames)} frames.")
     
-    ChannelFactoryInitialize(1, args.iface)
+    ChannelFactoryInitialize(args.domain, args.iface)
     
     controller = RealDeployController(frames, args.speed)
     sub = ChannelSubscriber("rt/lowstate", LowState_)

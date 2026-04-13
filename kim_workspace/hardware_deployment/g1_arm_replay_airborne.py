@@ -233,7 +233,7 @@ def main():
                         help="Command both arms (joints 15-28). Default: left arm only (15-21).")
     parser.add_argument("--interface", default="lo",
                         help="Network interface: 'lo' for simulation, 'eth0' for real hardware")
-    parser.add_argument("--domain", type=int, default=1, help="DDS Domain ID (default: 1)")
+    parser.add_argument("--domain", type=int, default=0, help="DDS Domain ID (default: 0 for real G1)")
     args = parser.parse_args()
 
     print("=" * 60)

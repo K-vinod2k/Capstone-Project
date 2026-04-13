@@ -109,7 +109,7 @@ def main():
     parser = argparse.ArgumentParser(description="G1 Encoder Monitor — read-only DDS subscriber")
     parser.add_argument("--interface", default="lo",
                         help="Network interface: 'lo' for simulation, 'eth0' for real hardware")
-    parser.add_argument("--domain", type=int, default=1, help="DDS Domain ID (default: 1)")
+    parser.add_argument("--domain", type=int, default=0, help="DDS Domain ID (default: 0 for real G1)")
     args = parser.parse_args()
 
     print(f"Initializing CycloneDDS on interface '{args.interface}', domain {args.domain}...")
