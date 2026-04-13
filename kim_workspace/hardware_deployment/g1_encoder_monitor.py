@@ -11,11 +11,16 @@ This script falsifies the assumption that CycloneDDS is correctly bridged
 and that joint indices 0-34 map as expected.
 
 Usage:
-    # For real hardware (Ethernet, robot at 192.168.123.x):
-    python g1_encoder_monitor.py --interface eth0
+    # For real hardware (Ethernet, Linux):
+    python g1_encoder_monitor.py --interface eth0 --peer 192.168.123.161
 
-    # For MuJoCo simulation bridge (loopback):
-    python g1_encoder_monitor.py --interface lo
+    # For MuJoCo simulation bridge (loopback, domain 1):
+    python g1_encoder_monitor.py --interface lo --domain 1
+
+Network prereqs for real hardware:
+    - Set a static IP on your machine in the 192.168.123.x subnet
+      (e.g., 192.168.123.99 / 255.255.255.0)
+    - Ping 192.168.123.161 (or whatever the G1's IP is) before running
 
 Requirements:
     - CycloneDDS installed and CYCLONEDDS_HOME set
@@ -23,6 +28,7 @@ Requirements:
     - Robot in DAMPING mode OR unitree_mujoco simulation running
 """
 
+import os
 import sys
 import time
 import argparse
@@ -108,9 +114,27 @@ class EncoderMonitor:
 def main():
     parser = argparse.ArgumentParser(description="G1 Encoder Monitor — read-only DDS subscriber")
     parser.add_argument("--interface", default="lo",
-                        help="Network interface: 'lo' for simulation, 'eth0' for real hardware")
-    parser.add_argument("--domain", type=int, default=0, help="DDS Domain ID (default: 0 for real G1)")
+                        help="Network interface. Simulation: 'lo'. "
+                             "Linux hardware: 'eth0'. macOS hardware: 'en0' or 'en1' "
+                             "(run `ifconfig | grep -E \"^en\"` to find yours).")
+    parser.add_argument("--domain", type=int, default=0,
+                        help="DDS Domain ID. Real G1: 0. unitree_mujoco simulation: 1.")
+    parser.add_argument("--peer", default="",
+                        help="Robot IP for explicit DDS peer discovery (e.g. 192.168.123.161). "
+                             "Required for real hardware — without this, multicast often fails "
+                             "over Ethernet. Leave empty for simulation (loopback).")
     args = parser.parse_args()
+
+    # For real hardware, inject the robot IP as an explicit DDS unicast peer.
+    # Simulation on loopback does not need this — auto-discovery works fine there.
+    if args.peer:
+        peer_xml = (
+            f"<CycloneDDS><Domain><Discovery><Peers>"
+            f"<Peer address=\"{args.peer}\"/>"
+            f"</Peers></Discovery></Domain></CycloneDDS>"
+        )
+        os.environ["CYCLONEDDS_URI"] = peer_xml
+        print(f"CYCLONEDDS_URI set for peer {args.peer}")
 
     print(f"Initializing CycloneDDS on interface '{args.interface}', domain {args.domain}...")
     ChannelFactoryInitialize(args.domain, args.interface)
@@ -121,8 +145,12 @@ def main():
     sub.Init(monitor.on_low_state, 10)
 
     print("Subscribed to rt/lowstate. Waiting for G1 state messages...")
-    print("If nothing appears within 5 seconds, CycloneDDS is not bridged correctly.")
-    print("Check: is the robot powered on? Is CYCLONEDDS_HOME set? Ping 192.168.123.x?")
+    print("If nothing appears within 5 seconds:")
+    print("  - Real hardware: did you pass --peer 192.168.123.161 (or your G1's IP)?")
+    print("  - macOS: is --interface en0 (not eth0)? Run: ifconfig | grep -E '^en'")
+    print("  - Is your machine on the 192.168.123.x subnet? Run: ping 192.168.123.161")
+    print("  - Is CYCLONEDDS_HOME set? Is the robot in DAMPING mode (L2+B)?")
+    print("  - Simulation: did you pass --domain 1 --interface lo?")
     print()
 
     try:
