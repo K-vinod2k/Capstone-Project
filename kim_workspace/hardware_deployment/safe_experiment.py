@@ -94,7 +94,7 @@ def wait_for_state(state_holder, timeout=5.0) -> bool:
 
 # ── Phase 0: DDS Readback ───────────────────────────────────────────────────
 
-def phase0_readback(iface: str) -> bool:
+def phase0_readback(iface: str, domain: int) -> bool:
     """READ ONLY. Confirm DDS is live and print arm joint readings."""
     print("\n" + "="*60)
     print("PHASE 0 — DDS Readback (no commands sent)")
@@ -105,7 +105,7 @@ def phase0_readback(iface: str) -> bool:
     def on_state(msg: LowState_):
         state_holder[0] = msg
 
-    ChannelFactoryInitialize(1, iface)
+    ChannelFactoryInitialize(domain, iface)
     sub = ChannelSubscriber("rt/lowstate", LowState_)
     sub.Init(on_state, 10)
 
@@ -340,6 +340,8 @@ def main():
     parser = argparse.ArgumentParser(description="Safe progressive hardware test for G1 23-DOF")
     parser.add_argument("--interface", default="lo",
                         help="Network interface: 'lo' for sim, 'eth0' for real hardware")
+    parser.add_argument("--domain", type=int, default=0,
+                        help="CycloneDDS domain ID (default: 0 for real G1)")
     parser.add_argument("--phase", type=int, choices=[0, 1, 2],
                         help="Run only this phase (default: run all in sequence)")
     args = parser.parse_args()
@@ -357,7 +359,7 @@ def main():
         sys.exit(0)
 
     # Phase 0 always runs first (also initializes DDS)
-    if not phase0_readback(args.interface):
+    if not phase0_readback(args.interface, args.domain):
         print("\n[STOPPED] Phase 0 failed. Fix DDS/network before continuing.")
         sys.exit(1)
 
