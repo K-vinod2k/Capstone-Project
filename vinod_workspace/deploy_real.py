@@ -21,6 +21,7 @@ Usage:
     python deploy_real.py --pkl output/hulk_kinematics.pkl --iface eth0
 """
 
+import os
 import sys
 import time
 import pickle
@@ -35,11 +36,11 @@ from unitree_sdk2py.idl.default import unitree_hg_msg_dds__LowState_ as LowState
 
 NUM_MOTOR = 35
 
-# Joint topology — 23-DOF hardware IDL
+# Joint topology — 29-DOF hardware IDL
 LEG_JOINTS   = list(range(0, 12))    # 0-11:  legs
-WAIST_JOINTS = [12]                  # 12:    TORSO (waist_yaw only)
-ARM_JOINTS   = list(range(13, 23))   # 13-22: L_shoulder x3, L_elbow x2, R_shoulder x3, R_elbow x2
-EXT_JOINTS   = list(range(23, 35))   # 23-34: unused on 23-DOF
+WAIST_JOINTS = [12, 13, 14]          # 12: waist_yaw  13-14: waist_roll/pitch (passive)
+ARM_JOINTS   = list(range(15, 29))   # 15-21: L_arm, 22-28: R_arm
+EXT_JOINTS   = list(range(29, 35))   # 29-34: unused extended joints
 
 # DUAL-TIER PD GAINS 
 # Legs/Waist need massive rigidity to support gravity CoM
@@ -216,6 +217,7 @@ def main():
     parser.add_argument("--iface", default="lo", help="'lo' for sim testing, 'eth0' for real hardware")
     parser.add_argument("--domain", type=int, default=0, help="DDS Domain ID (default: 0 for real G1)")
     parser.add_argument("--speed", type=float, default=1.0, help="Speed multiplier (0.5 = half speed)")
+    parser.add_argument("--peer", default="", help="Robot IP for unicast DDS peer discovery (e.g. 192.168.123.164). Required for real hardware.")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -230,7 +232,15 @@ def main():
         sys.exit(1)
 
     print(f"Payload target acquired: {len(frames)} frames.")
-    
+
+    if args.peer:
+        os.environ["CYCLONEDDS_URI"] = (
+            f"<CycloneDDS><Domain><Discovery><Peers>"
+            f"<Peer address=\"{args.peer}\"/>"
+            f"</Peers></Discovery></Domain></CycloneDDS>"
+        )
+        print(f"CYCLONEDDS_URI set for peer {args.peer}")
+
     ChannelFactoryInitialize(args.domain, args.iface)
     
     controller = RealDeployController(frames, args.speed)

@@ -1,0 +1,116 @@
+# KPOP: PKL Deployment to Real G1 Robot
+**Problem:** Deploy a kinematic pkl file via `deploy_real.py` to the real G1 robot at 192.168.123.164.
+**Budget:** 10 hypotheses
+**Date:** 2026-04-13
+
+---
+
+## H1: deploy_real.py will fail DDS connectivity — missing CYCLONEDDS_URI
+*Hypotheses used: 1/10*
+
+**Hypothesis:** `deploy_real.py` does not set `CYCLONEDDS_URI` before calling `ChannelFactoryInitialize`, so DDS peer discovery fails over Ethernet — the same root cause we diagnosed in `g1_encoder_monitor.py`.
+
+**Prediction:** Without the peer XML, `controller.current_state` will remain `None` forever. The script will print "Awaiting DDS bridge connection..." and hang.
+
+**Test:** Inspect `vinod_workspace/deploy_real.py` line 234:
+```python
+ChannelFactoryInitialize(args.domain, args.iface)   # ← no CYCLONEDDS_URI set
+```
+No `os.environ["CYCLONEDDS_URI"]` call anywhere in the file.
+
+**Result:** Confirmed — `CYCLONEDDS_URI` is never set. Also no `--peer` argument exists.
+
+**Verdict:** NOT FALSIFIED — this is a real blocker. Must fix before testing.
+
+**Notes:** Fix mirrors what was done for `g1_encoder_monitor.py`: add `--peer` arg + inject `CYCLONEDDS_URI` before `ChannelFactoryInitialize`.
+
+---
+
+## H2: pkl joint_angles have wrong DOF count (not 35)
+*Hypotheses used: 2/10*
+
+**Hypothesis:** The pkl files in `kim_workspace/movements/` have fewer than 35 columns, causing index-out-of-range errors in the 35-motor command loop.
+
+**Prediction:** If DOF ≠ 35, `deploy_real.py` would crash with an IndexError at the first `self.frames[0]` access in `ease_to_stand`.
+
+**Test:** Inspect `vinod_workspace/clamp_pkls.py` — it processes the same pkl files and references `(N-1, 35)` in comments. Shape is `joints.shape` → `(N, D)` where clamping loops over `range(D)`.
+
+**Result:** `clamp_pkls.py` confirmed shape is `(N, 35)` — 35 DOF per frame, matching `NUM_MOTOR = 35` in `deploy_real.py`.
+
+**Verdict:** FALSIFIED — pkl DOF is correct.
+
+---
+
+## H3: Clamped joint velocities still exceed the 10 rad/s abort threshold
+*Hypotheses used: 3/10*
+
+**Hypothesis:** Even after `clamp_pkls.py` processing, joint-to-joint deltas at 30 FPS could exceed `VELOCITY_ABORT_THRESHOLD = 10.0 rad/s`, triggering an immediate abort.
+
+**Prediction:** If max velocity > 10 rad/s, the safety abort fires on the first tick of `ease_to_stand` or `run`.
+
+**Test:** `clamp_pkls.py` sets `MAX_VEL = 0.5 rad/s`. After clamping, `after` printed per file is ≤ 0.5 rad/s. Abort threshold is 10 rad/s. Margin = 20×.
+
+**Result:** Clamped to ≤ 0.5 rad/s. Abort threshold is 10 rad/s. No overlap possible.
+
+**Verdict:** FALSIFIED — velocity is safe, abort will not trigger from pkl motion itself.
+
+---
+
+## H4: ARM_JOINTS index range in deploy_real.py doesn't match pkl joint ordering
+*Hypotheses used: 4/10*
+
+**Hypothesis:** `deploy_real.py` defines `ARM_JOINTS = list(range(13, 23))` (23-DOF hardware IDL mapping), but the pkl was generated using the 29-DOF CLAUDE.md mapping where left arm starts at index 15. This mismatch means wrong physical joints get commanded.
+
+**Prediction:** If true, commanding "arm" joints 13-14 would actually move waist joints, not arms.
+
+**Test:** Cross-reference:
+- `deploy_real.py`: `ARM_JOINTS = list(range(13, 23))` — waist_roll/pitch at 13-14, then arms at 15-22
+- `CLAUDE.md` 29-DOF map: `12=waist_yaw`, `13-14=waist_roll/pitch (passive)`, `15-21=L_arm`, `22-28=R_arm`
+- `deploy_real.py` also sets `WAIST_JOINTS = [12]` only — so indices 13-14 fall into ARM_JOINTS with `KP_ARM=60`
+
+**Result:** Indices 13-14 (`waist_roll`, `waist_pitch`) are passive joints in the 29-DOF model but get `KP_ARM=60` gain in `deploy_real.py`. This is non-zero torque on passive waist joints. Could cause instability.
+
+**Verdict:** NOT FALSIFIED — index 13-14 gain assignment is incorrect. Waist_roll/pitch should be KP=0 (passive). Fix needed.
+
+**Notes:** `WAIST_JOINTS` should be `[12, 13, 14]` not just `[12]`, or at minimum KP for 13-14 should match the passive treatment.
+
+---
+
+## Fixes Applied
+
+### Fix 1 — Add `--peer` + `CYCLONEDDS_URI` to `deploy_real.py` (H1) ✓
+```python
+if args.peer:
+    os.environ["CYCLONEDDS_URI"] = (
+        f"<CycloneDDS><Domain><Discovery><Peers>"
+        f"<Peer address=\"{args.peer}\"/>"
+        f"</Peers></Discovery></Domain></CycloneDDS>"
+    )
+ChannelFactoryInitialize(args.domain, args.iface)
+```
+
+### Fix 2 — Correct joint topology to 29-DOF map (H4) ✓
+```python
+# Before (wrong — 23-DOF, puts waist_roll/pitch in ARM_JOINTS)
+WAIST_JOINTS = [12]
+ARM_JOINTS   = list(range(13, 23))
+
+# After (correct — 29-DOF matches CLAUDE.md and pkl format)
+WAIST_JOINTS = [12, 13, 14]   # waist_yaw + passive waist_roll/pitch
+ARM_JOINTS   = list(range(15, 29))  # L_arm 15-21, R_arm 22-28
+```
+
+---
+
+## Run Command
+
+```bash
+python vinod_workspace/deploy_real.py \
+    --pkl kim_workspace/movements/wave_kinematics.pkl \
+    --iface eth0 \
+    --peer 192.168.123.164 \
+    --speed 0.5
+```
+
+**Next hypothesis to falsify after first run:**
+H5: The ease-in phase will produce a smooth transition (no violent snap or abort trigger).
