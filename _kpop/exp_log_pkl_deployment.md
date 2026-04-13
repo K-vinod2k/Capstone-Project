@@ -80,7 +80,7 @@ Robot is safe to handle.
 
 **Result:** Indices 13-14 (`waist_roll`, `waist_pitch`) are passive joints in the 29-DOF model but get `KP_ARM=60` gain in `deploy_real.py`. This is non-zero torque on passive waist joints. Could cause instability.
 
-**Verdict:** NOT FALSIFIED — index 13-14 gain assignment is incorrect. Waist_roll/pitch should be KP=0 (passive). Fix needed.
+**Verdict:** FALSIFIED — `inspect_pkl.py` run on `hulk_smash_kinematics.pkl` confirmed pkls ARE in 23-DOF remapped layout. Index 13=L_shoulder_pitch (max 2.5 rad), 14=L_shoulder_roll (max 1.8 rad), 18=R_shoulder_pitch (mirror), 19=R_shoulder_roll (mirror). The original `ARM_JOINTS = range(13,23)` was correct. Our H4 "fix" to range(15,29) was wrong and broke the left arm — reverted.
 
 **Notes:** `WAIST_JOINTS` should be `[12, 13, 14]` not just `[12]`, or at minimum KP for 13-14 should match the passive treatment.
 

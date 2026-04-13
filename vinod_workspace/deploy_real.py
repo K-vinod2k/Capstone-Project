@@ -37,11 +37,12 @@ from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import MotionSwi
 
 NUM_MOTOR = 35
 
-# Joint topology — 29-DOF hardware IDL
+# Joint topology — 23-DOF remapped layout (remap_23dof.py was applied to all pkls)
+# Arms live at 13-22, NOT 15-28. Confirmed by inspect_pkl.py on hulk_smash pkl.
 LEG_JOINTS   = list(range(0, 12))    # 0-11:  legs
-WAIST_JOINTS = [12, 13, 14]          # 12: waist_yaw  13-14: waist_roll/pitch (passive)
-ARM_JOINTS   = list(range(15, 29))   # 15-21: L_arm, 22-28: R_arm
-EXT_JOINTS   = list(range(29, 35))   # 29-34: unused extended joints
+WAIST_JOINTS = [12]                  # 12: waist_yaw only
+ARM_JOINTS   = list(range(13, 23))   # 13-17: L_arm, 18-22: R_arm
+EXT_JOINTS   = list(range(23, 35))   # 23-34: unused
 
 # DUAL-TIER PD GAINS 
 # Legs/Waist need massive rigidity to support gravity CoM
