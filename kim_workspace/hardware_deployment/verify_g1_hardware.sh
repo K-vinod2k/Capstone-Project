@@ -50,18 +50,17 @@ else
 fi
 
 # ── STEP 3: CYCLONEDDS_HOME ──────────────────────────────────────────────────
-sep 3 "CYCLONEDDS_HOME env var"
+sep 3 "CYCLONEDDS_HOME env var (optional if bundled in conda)"
 if [ -n "${CYCLONEDDS_HOME:-}" ]; then
     if [ -d "$CYCLONEDDS_HOME" ]; then
         pass "CYCLONEDDS_HOME=$CYCLONEDDS_HOME"
     else
-        fail "CYCLONEDDS_HOME is set but directory does not exist: $CYCLONEDDS_HOME"
-        info "Fix: rebuild CycloneDDS and update CYCLONEDDS_HOME in ~/.bashrc"
+        echo "[WARN] CYCLONEDDS_HOME is set but directory does not exist: $CYCLONEDDS_HOME"
+        info  "Non-blocking if CycloneDDS is bundled in your conda env (step 5 will confirm)"
     fi
 else
-    fail "CYCLONEDDS_HOME is not set"
-    info "Fix: export CYCLONEDDS_HOME=/path/to/cyclonedds/install"
-    info "     Add this to ~/.bashrc to make it permanent"
+    echo "[WARN] CYCLONEDDS_HOME is not set"
+    info  "Non-blocking if CycloneDDS is bundled in your conda env (step 5 will confirm)"
 fi
 
 # ── STEP 4: unitree_sdk2py ───────────────────────────────────────────────────
