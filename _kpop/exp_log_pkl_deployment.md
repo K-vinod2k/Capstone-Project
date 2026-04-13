@@ -133,3 +133,45 @@ python3 vinod_workspace/deploy_real.py \
 **Ruled out:** Wrong DOF count (H2), velocity abort from clamped pkl (H3), DDS peer required on Linux (H1)
 **Open questions:** H4 (joint index mismatch 13-14) — effect not yet observed since wave motion is arm-light. Will matter for full-body poses.
 **Next:** Test hulk_smash or iron_man_repulsor (heavier arm motion) to validate H4 joint fix.
+
+---
+
+## H5: Robot ignores LowCmd because built-in locomotion controller is still active
+*Hypotheses used: 5/10*
+
+**Hypothesis:** Even with DDS connected and commands sent, the robot's built-in high-level controller (balance/locomotion) is still running and overriding all low-level PD commands — so the script "works" from DDS perspective but the robot doesn't move.
+
+**Prediction:** Calling `MotionSwitcherClient.ReleaseMode()` before sending any commands will allow the robot to respond to our PD commands.
+
+**Test:** Inspect `g1_low_level_example.py` lines 89-98:
+```python
+self.msc = MotionSwitcherClient()
+status, result = self.msc.CheckMode()
+while result['name']:
+    self.msc.ReleaseMode()   # ← this is what deploy_real.py was missing
+```
+The official example always releases any active mode before low-level control.
+
+**Result:** Confirmed missing from `deploy_real.py`. Fix applied: add `MotionSwitcherClient` release loop before `ChannelFactoryInitialize`.
+
+**Verdict:** NOT FALSIFIED — this is the root cause of no movement. Fix applied.
+
+---
+
+## H6: mode_machine=0 causes robot to silently discard LowCmd
+*Hypotheses used: 6/10*
+
+**Hypothesis:** `deploy_real.py` hardcodes `mode_machine=0` in every LowCmd. The robot's actual `mode_machine` may differ, causing it to silently reject commands.
+
+**Prediction:** Reading `mode_machine` from the first `LowState` and echoing it in every `LowCmd` will make the robot accept commands.
+
+**Test:** `g1_low_level_example.py` line 122:
+```python
+self.mode_machine_ = self.low_state.mode_machine  # read from robot
+self.low_cmd.mode_machine = self.mode_machine_     # echo back
+```
+`deploy_real.py` had hardcoded `mode_machine=0` everywhere.
+
+**Result:** Fix applied — `on_low_state` now captures `mode_machine` on first message and sets it on both `_cmd` and `_zero_cmd`.
+
+**Verdict:** NOT FALSIFIED — fix applied alongside H5.

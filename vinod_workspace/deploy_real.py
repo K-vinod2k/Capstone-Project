@@ -33,6 +33,7 @@ from unitree_sdk2py.utils.crc import CRC
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_, LowCmd_
 from unitree_sdk2py.idl.default import unitree_hg_msg_dds__LowCmd_ as LowCmd_default
 from unitree_sdk2py.idl.default import unitree_hg_msg_dds__LowState_ as LowState_default
+from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import MotionSwitcherClient
 
 NUM_MOTOR = 35
 
@@ -94,7 +95,8 @@ class RealDeployController:
         self.speed_factor = speed_factor
         self.current_state: LowState_ | None = None
         self.aborted = False
-        
+        self._mode_machine: int | None = None  # read from robot on first LowState
+
         self.num_frames = len(pkl_frames)
         # Using floating point index interpolation at 500Hz
         self.active_fps = PKL_FPS * speed_factor
@@ -112,6 +114,13 @@ class RealDeployController:
 
     def on_low_state(self, msg: LowState_):
         self.current_state = msg
+        # Capture mode_machine from robot on first message and echo it in every cmd.
+        # The robot silently ignores LowCmd whose mode_machine doesn't match its own.
+        if self._mode_machine is None:
+            self._mode_machine = msg.mode_machine
+            self._cmd.mode_machine = self._mode_machine
+            self._zero_cmd.mode_machine = self._mode_machine
+            print(f"[DDS] mode_machine={self._mode_machine} captured from robot")
 
     def _check_safety_abort(self, msg: LowState_) -> bool:
         for i in LEG_JOINTS + WAIST_JOINTS + ARM_JOINTS:
@@ -242,13 +251,27 @@ def main():
         print(f"CYCLONEDDS_URI set for peer {args.peer}")
 
     ChannelFactoryInitialize(args.domain, args.iface)
-    
+
+    # Release any active high-level locomotion mode (balance, walk, etc.).
+    # Without this the built-in controller overrides all low-level PD commands.
+    print("Releasing active motion mode...")
+    msc = MotionSwitcherClient()
+    msc.SetTimeout(5.0)
+    msc.Init()
+    status, result = msc.CheckMode()
+    while result.get("name"):
+        print(f"  Active mode: {result['name']} — releasing...")
+        msc.ReleaseMode()
+        time.sleep(1)
+        status, result = msc.CheckMode()
+    print("Motion mode released. Proceeding to low-level control.")
+
     controller = RealDeployController(frames, args.speed)
     sub = ChannelSubscriber("rt/lowstate", LowState_)
     sub.Init(controller.on_low_state, 10)
     pub = ChannelPublisher("rt/lowcmd", LowCmd_)
     pub.Init()
-    
+
     try:
         controller.run(pub)
     except KeyboardInterrupt:
