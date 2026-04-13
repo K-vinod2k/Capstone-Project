@@ -90,7 +90,7 @@ Copy `.env.example` to `.env` and set:
 - Kinematic (default): joint angles set directly each frame, no gravity
 - Physics (`--physics`): PD actuators (kp=200, kd=10) + gravity + contact at 150 Hz
 
-**Real robot prereqs:** Ubuntu + Ethernet to G1 at `192.168.123.x`; robot must be in DAMPING mode (L2+A on controller); keep L1+L2 e-stop ready.
+**Real robot prereqs:** Ubuntu + Ethernet to G1 at `192.168.123.x`; robot must be in DAMPING mode (L2+B on controller); keep L1+L2 e-stop ready.
 
 **G1 Joint Map (29 DOF):**
 ```

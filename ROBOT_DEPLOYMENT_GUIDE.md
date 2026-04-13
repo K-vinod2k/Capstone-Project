@@ -327,7 +327,7 @@ All PKL files are in `kim_workspace/movements/`. All velocity-clamped to ≤ 2.0
 
 **Robot does not move at all**
 
-- Confirm DAMPING mode is active (L2+A on controller)
+- Confirm DAMPING mode is active (L2+B on controller)
 - Confirm `mode_pr` and `mode_machine` match your robot firmware version
 - Check CRC: the LowCmd_ must have valid CRC or robot ignores it
 

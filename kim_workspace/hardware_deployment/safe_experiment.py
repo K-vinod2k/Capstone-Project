@@ -20,7 +20,7 @@ Usage:
 
 SAFETY PRECONDITIONS:
   1. Robot suspended on gantry — feet off ground
-  2. Robot in DAMPING mode (L2+A on controller)
+  2. Robot in DAMPING mode (L2+B on controller)
   3. Operator on L1+L2 e-stop at all times
   4. Run g1_encoder_monitor.py first — confirm joint 13 = L_shoulder_pitch
 """
@@ -347,7 +347,7 @@ def main():
     print("=" * 60)
     print("PRECONDITIONS (confirm all before typing YES):")
     print("  1. Robot is SUSPENDED on gantry (feet off ground)")
-    print("  2. Robot is in DAMPING mode (L2+A held until limp)")
+    print("  2. Robot is in DAMPING mode (L2+B held until limp)")
     print("  3. Second operator is holding L1+L2 e-stop")
     print("  4. g1_encoder_monitor.py was run — joint 13 confirmed")
     if not confirm("ALL preconditions met?"):

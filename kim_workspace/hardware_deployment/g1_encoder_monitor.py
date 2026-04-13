@@ -3,7 +3,7 @@ G1 Encoder Monitor — Step 2: Zero-Torque Encoder Readback Test
 ---------------------------------------------------------------
 READ ONLY. No commands are published to the robot.
 
-Boot the G1 in DAMPING mode (L2+A on controller). Then run this script.
+Boot the G1 in DAMPING mode (L2+B on controller). Then run this script.
 Physically manipulate each joint by hand. Verify that the terminal output
 reflects the angle change in the correct motor index.
 

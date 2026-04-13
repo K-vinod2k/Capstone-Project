@@ -7,7 +7,7 @@ using aggressive 500Hz PD control with safety velocity clamps.
 
 SAFETY PRECONDITIONS (do not skip):
   1. Robot is physically cleared of obstacles. (Gantry suspension recommended for first test).
-  2. Robot was booted in DAMPING mode (L2+A), taken to zero-torque manually.
+  2. Robot was booted in DAMPING mode (L2+B), taken to zero-torque manually.
   3. Operator holds physical L1+L2 E-Stop.
 
 Features:
