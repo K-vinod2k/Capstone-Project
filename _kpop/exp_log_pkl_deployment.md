@@ -18,11 +18,21 @@ ChannelFactoryInitialize(args.domain, args.iface)   # ← no CYCLONEDDS_URI set
 ```
 No `os.environ["CYCLONEDDS_URI"]` call anywhere in the file.
 
-**Result:** Confirmed — `CYCLONEDDS_URI` is never set. Also no `--peer` argument exists.
+**Result:** ~~Confirmed blocker~~ → **ACTUAL RUN (2026-04-13):** Script ran to completion without `--peer`. DDS auto-discovered the robot on Linux via CycloneDDS multicast on same subnet. 121 frames played, clean disengage.
 
-**Verdict:** NOT FALSIFIED — this is a real blocker. Must fix before testing.
+```
+Payload target acquired: 121 frames.
+DDS Bridge Live! Starting deployment safely sequence...
+[PHASE 1] Easing to first frame over 3.0 seconds...
+[PHASE 2] Executing Kinematic Payload
+...Frame 105.0/121 | Velocity clamps holding...
+[DISENGAGE] Dropping into zero-torque limp compliance...
+Robot is safe to handle.
+```
 
-**Notes:** Fix mirrors what was done for `g1_encoder_monitor.py`: add `--peer` arg + inject `CYCLONEDDS_URI` before `ChannelFactoryInitialize`.
+**Verdict:** FALSIFIED — DDS works without `CYCLONEDDS_URI` on Linux with direct Ethernet (CycloneDDS multicast handles peer discovery automatically on the same subnet). The `--peer` flag remains as a useful fallback for setups where multicast fails.
+
+**Notes:** macOS requires explicit peer; Linux with direct Ethernet does not.
 
 ---
 
@@ -102,15 +112,24 @@ ARM_JOINTS   = list(range(15, 29))  # L_arm 15-21, R_arm 22-28
 
 ---
 
-## Run Command
+## Confirmed Working Run Command
 
 ```bash
-python vinod_workspace/deploy_real.py \
+python3 vinod_workspace/deploy_real.py \
     --pkl kim_workspace/movements/wave_kinematics.pkl \
-    --iface eth0 \
-    --peer 192.168.123.164 \
+    --iface enp0s31f6 \
     --speed 0.5
 ```
 
-**Next hypothesis to falsify after first run:**
-H5: The ease-in phase will produce a smooth transition (no violent snap or abort trigger).
+**Interface:** `enp0s31f6` (not `eth0`) — confirmed on iotlab Linux machine.
+**`--peer` not required** on Linux with direct Ethernet (CycloneDDS multicast works).
+
+## Final Summary
+
+**Problem:** Deploy a kinematic pkl file to the real G1 robot.
+**Solved:** YES
+**Solution:** No code changes required for DDS. Joint topology fix (H4) applied as safety improvement.
+**Hypotheses used:** 4 / 10
+**Ruled out:** Wrong DOF count (H2), velocity abort from clamped pkl (H3), DDS peer required on Linux (H1)
+**Open questions:** H4 (joint index mismatch 13-14) — effect not yet observed since wave motion is arm-light. Will matter for full-body poses.
+**Next:** Test hulk_smash or iron_man_repulsor (heavier arm motion) to validate H4 joint fix.
