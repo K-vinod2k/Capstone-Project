@@ -147,7 +147,9 @@ class RealDeployController:
 
             alpha = tick / float(ease_ticks)
             interp_q = (1.0 - alpha) * start_q + alpha * target_q
-            
+            interp_q = interp_q.copy()
+            interp_q[19] = -interp_q[19]  # R_shoulder_roll sign flip
+
             for i in range(NUM_MOTOR):
                 if i in LEG_JOINTS + WAIST_JOINTS + ARM_JOINTS:
                     self._cmd.motor_cmd[i].q = float(interp_q[i])
@@ -195,7 +197,12 @@ class RealDeployController:
             alpha = float_idx - idx0
             
             interp_q = (1.0 - alpha) * self.frames[idx0] + alpha * self.frames[idx1]
-            
+
+            # R_shoulder_roll (idx 19) sign flip: hardware mounts right arm motor
+            # in the opposite direction to left arm, so negate to get symmetric motion.
+            interp_q = interp_q.copy()
+            interp_q[19] = -interp_q[19]
+
             for i in range(NUM_MOTOR):
                 if i in LEG_JOINTS + WAIST_JOINTS + ARM_JOINTS:
                     self._cmd.motor_cmd[i].q = float(interp_q[i])
