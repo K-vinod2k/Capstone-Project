@@ -203,9 +203,15 @@ class RealDeployController:
             self._cmd.crc = self._crc.Crc(self._cmd)
             publisher.Write(self._cmd)
 
-            # Diagnostic telemetry formatting
+            # Diagnostic telemetry: show commanded vs actual encoder for both arms
             if int(t * CTRL_HZ) % (int(CTRL_HZ // 5)) == 0:
-                print(f"Playback: Frame {float_idx:.1f}/{self.num_frames} | Velocity clamps holding...", end="\\r")
+                # Left arm: L_shoulder_pitch(13), L_shoulder_roll(14)
+                # Right arm: R_shoulder_pitch(18), R_shoulder_roll(19)
+                l_cmd  = float(interp_q[13]);  l_enc  = self.current_state.motor_state[13].q
+                r_cmd  = float(interp_q[18]);  r_enc  = self.current_state.motor_state[18].q
+                print(f"Frame {float_idx:>6.1f}/{self.num_frames} | "
+                      f"L_sp cmd={l_cmd:>6.3f} enc={l_enc:>6.3f} | "
+                      f"R_sp cmd={r_cmd:>6.3f} enc={r_enc:>6.3f}", end="\r")
                 
             elapsed = time.monotonic() - loop_start
             time.sleep(max(0, CTRL_DT - elapsed))
