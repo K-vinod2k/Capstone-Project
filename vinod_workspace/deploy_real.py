@@ -37,13 +37,12 @@ from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import MotionSwi
 
 NUM_MOTOR = 35
 
-# Joint topology — 29-DOF hardware IDL (matches g1_low_level_example.py G1JointIndex)
-# remap_23dof.py was incorrectly applied to pkls — restore pkls from git before running.
-# PKL format: 0-11 legs, 12 waist_yaw, 13-14 waist passive, 15-21 L_arm, 22-28 R_arm
+# Joint topology — G1 23-DOF hardware IDL
+# PKL format (after remap_23dof.py): 0-11 legs, 12 TORSO, 13-17 L_arm, 18-22 R_arm
 LEG_JOINTS   = list(range(0, 12))    # 0-11:  legs
-WAIST_JOINTS = [12, 13, 14]          # 12: waist_yaw, 13-14: passive (hardware ignores)
-ARM_JOINTS   = list(range(15, 29))   # 15-21: L_arm, 22-28: R_arm
-EXT_JOINTS   = list(range(29, 35))   # 29-34: unused
+WAIST_JOINTS = [12]                  # 12:    TORSO (waist_yaw only on 23-DOF)
+ARM_JOINTS   = list(range(13, 23))   # 13-17: L_arm, 18-22: R_arm
+EXT_JOINTS   = list(range(23, 35))   # 23-34: unused on 23-DOF
 
 # DUAL-TIER PD GAINS 
 # Legs/Waist need massive rigidity to support gravity CoM

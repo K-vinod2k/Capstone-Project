@@ -4,8 +4,8 @@ import numpy as np
 import os
 
 PKL_FPS = 30.0
-MAX_VEL = 2.0          # rad/s
-MAX_DELTA = MAX_VEL / PKL_FPS  # 0.0667 rad/frame
+MAX_VEL = 0.5          # rad/s — conservative hardware limit
+MAX_DELTA = MAX_VEL / PKL_FPS  # 0.0167 rad/frame
 
 
 def clamp_numpy(joints):
