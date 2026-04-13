@@ -101,7 +101,8 @@ class RealDeployController:
         self._cmd = _make_cmd()
         self._zero_cmd = _make_cmd()
         self._gains = _build_gain_map()
-        
+        self._crc = CRC()
+
         # Load gains into cmd reference
         for i in range(NUM_MOTOR):
             kp, kd = self._gains[i]
@@ -140,8 +141,9 @@ class RealDeployController:
                 if i in LEG_JOINTS + WAIST_JOINTS + ARM_JOINTS:
                     self._cmd.motor_cmd[i].q = float(interp_q[i])
                     
+            self._cmd.crc = self._crc.Crc(self._cmd)
             publisher.Write(self._cmd)
-            
+
             elapsed = time.monotonic() - loop_start
             time.sleep(max(0, CTRL_DT - elapsed))
 
@@ -187,8 +189,9 @@ class RealDeployController:
                 if i in LEG_JOINTS + WAIST_JOINTS + ARM_JOINTS:
                     self._cmd.motor_cmd[i].q = float(interp_q[i])
                     
+            self._cmd.crc = self._crc.Crc(self._cmd)
             publisher.Write(self._cmd)
-            
+
             # Diagnostic telemetry formatting
             if int(t * CTRL_HZ) % (int(CTRL_HZ // 5)) == 0:
                 print(f"Playback: Frame {float_idx:.1f}/{self.num_frames} | Velocity clamps holding...", end="\\r")
@@ -201,6 +204,7 @@ class RealDeployController:
     def _kill(self, publisher: ChannelPublisher):
         print("\\n\\n[DISENGAGE] Dropping into zero-torque limp compliance...")
         for _ in range(15):
+            self._zero_cmd.crc = self._crc.Crc(self._zero_cmd)
             publisher.Write(self._zero_cmd)
             time.sleep(0.01)
         print("Robot is safe to handle.")

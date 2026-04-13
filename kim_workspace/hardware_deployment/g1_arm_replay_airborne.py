@@ -111,6 +111,7 @@ class ArmReplayController:
         self._cmd      = _make_cmd()
         self._zero_cmd = _make_cmd()
         self._gains    = _build_gain_map(arm_indices)
+        self._crc      = CRC()
         # Stamp static gains/positions on _cmd once; only arm q changes per tick
         for i in range(NUM_MOTOR):
             kp, kd = self._gains[i]
@@ -161,7 +162,9 @@ class ArmReplayController:
                     break
 
                 target = self.frames[frame_idx]  # shape (35,)
-                publisher.Write(self._update_cmd(target))
+                cmd = self._update_cmd(target)
+                cmd.crc = self._crc.Crc(cmd)
+                publisher.Write(cmd)
 
                 # Print status at ~5 Hz
                 if tick % (CTRL_HZ // 5) == 0:
@@ -190,6 +193,7 @@ class ArmReplayController:
             # Always return to zero torque on exit
             print("Sending zero-torque command to all joints...")
             for _ in range(10):  # send several times to ensure delivery
+                self._zero_cmd.crc = self._crc.Crc(self._zero_cmd)
                 publisher.Write(self._zero_cmd)
                 time.sleep(0.01)
             print("Done. Safe to handle robot.")
