@@ -271,7 +271,7 @@ def phase2_wave(pub: ChannelPublisher, state_holder: list) -> bool:
 
     KP = 20.0
     KD = 2.0
-    ABORT_VEL = 5.0
+    ABORT_VEL = 10.0
     PKL_FPS = 30.0
     TICKS_PER_FRAME = int(CTRL_HZ / PKL_FPS)  # 6 ticks per frame
 
