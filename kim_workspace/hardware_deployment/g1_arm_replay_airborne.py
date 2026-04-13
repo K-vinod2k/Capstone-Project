@@ -44,12 +44,12 @@ from unitree_sdk2py.idl.default import unitree_hg_msg_dds__LowState_ as LowState
 
 NUM_MOTOR = 35
 
-# Joint index ranges (from CLAUDE.md + hardware IDL)
+# Joint index ranges — 23-DOF hardware IDL
 LEG_JOINTS   = list(range(0, 12))    # 0-11:  both legs
-WAIST_JOINTS = list(range(12, 15))   # 12-14: waist
-LEFT_ARM     = list(range(15, 22))   # 15-21: left arm
-RIGHT_ARM    = list(range(22, 29))   # 22-28: right arm
-EXT_JOINTS   = list(range(29, 35))   # 29-34: extended (unconfirmed mapping)
+WAIST_JOINTS = [12]                  # 12: TORSO (waist_yaw only on 23-DOF)
+LEFT_ARM     = list(range(13, 18))   # 13-17: L_shoulder x3, L_elbow x2
+RIGHT_ARM    = list(range(18, 23))   # 18-22: R_shoulder x3, R_elbow x2
+EXT_JOINTS   = list(range(23, 35))   # 23-34: unused on 23-DOF
 
 # Control gains — deliberately conservative
 KP_ARM   = 20.0   # ~10% of sim Kp=200. Loose tracking.

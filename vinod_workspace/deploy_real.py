@@ -35,11 +35,11 @@ from unitree_sdk2py.idl.default import unitree_hg_msg_dds__LowState_ as LowState
 
 NUM_MOTOR = 35
 
-# Joint topology 
-LEG_JOINTS   = list(range(0, 12))    # 0-11: legs
-WAIST_JOINTS = list(range(12, 15))   # 12-14: waist
-ARM_JOINTS   = list(range(15, 29))   # 15-28: arms
-EXT_JOINTS   = list(range(29, 35))   # 29-34: zero torque mapped
+# Joint topology — 23-DOF hardware IDL
+LEG_JOINTS   = list(range(0, 12))    # 0-11:  legs
+WAIST_JOINTS = [12]                  # 12:    TORSO (waist_yaw only)
+ARM_JOINTS   = list(range(13, 23))   # 13-22: L_shoulder x3, L_elbow x2, R_shoulder x3, R_elbow x2
+EXT_JOINTS   = list(range(23, 35))   # 23-34: unused on 23-DOF
 
 # DUAL-TIER PD GAINS 
 # Legs/Waist need massive rigidity to support gravity CoM
