@@ -104,6 +104,11 @@ VIEWER_FRAMES_PER_ANIM_FRAME = int(round(VIEWER_HZ / ANIMATION_FPS))  # = 5
 # Diagnostic print interval
 DIAG_INTERVAL_SEC = 0.5
 
+# VLAW constants
+FALL_CONFIRM_TICKS = 25                                         # physics ticks before VLAW fires (~0.05s)
+VLAW_SERVER_URL    = "http://127.0.0.1:8080/vlaw_sim_sync"
+CRASH_STATE_PATH   = Path(__file__).parent / "crash_state.json"
+
 
 # ─── JOINT MAPPING (built at runtime from model — never hardcoded) ─────────────
 
@@ -191,6 +196,19 @@ def compute_tracking_error(
     return float(np.sqrt(np.mean(errors ** 2)))
 
 
+def pkl_to_target_list(pkl_path: str, nu: int) -> list[np.ndarray]:
+    """
+    Load (N, 35) joint angles from a pkl file.
+    Returns list of (nu,) float32 target arrays for apply_pd().
+    Hardware IDL motor index i maps directly to ctrl channel i for i in 0..nu-1.
+    Indices nu..34 are extended joints absent from the model and are discarded.
+    """
+    with open(pkl_path, "rb") as f:
+        raw = pickle.load(f)
+    joints = np.array(raw["joint_angles"], dtype=np.float32)  # (N, 35)
+    return [row[:nu].copy() for row in joints]
+
+
 # ─── INITIALIZATION ───────────────────────────────────────────────────────────
 
 def seed_initial_state(
@@ -213,7 +231,8 @@ def seed_initial_state(
 
 # ─── MAIN LOOP ────────────────────────────────────────────────────────────────
 
-def run(animation_name: str | None = None, hold_seconds: float = 5.0):
+def run(animation_name: str | None = None, hold_seconds: float = 5.0,
+        vlaw: bool = False, fall_test: bool = False):
     if not SCENE_XML.exists():
         print(f"[ERROR] scene.xml not found at:\n  {SCENE_XML}")
         print("Expected path: kim_workspace/hardware_deployment/unitree_mujoco/unitree_robots/g1/scene.xml")
@@ -267,6 +286,8 @@ def run(animation_name: str | None = None, hold_seconds: float = 5.0):
     viewer_tick       = 0
     last_diag_time    = time.monotonic()
     fallen            = False
+    fall_tick_count   = 0
+    vlaw_fired        = False
 
     with mujoco.viewer.launch_passive(model, data) as viewer:
         viewer.cam.lookat[:] = [0.0, 0.0, 0.8]
@@ -320,38 +341,45 @@ def run(animation_name: str | None = None, hold_seconds: float = 5.0):
                     f"[{status}]"
                 )
 
-            if diag["z"] < FALLEN_THRESHOLD and not fallen:
-                fallen = True
-                print(f"\n[VERDICT] FALLEN at t={data.time:.2f}s, Z={diag['z']:.4f}m")
-                print("=========================================================")
-                print("[VLAW NODE] Fall Trigger Activated.")
-                print("Attempting to POST to Static GenAI Proxy on Local Server...")
-                try:
-                    res = requests.post("http://127.0.0.1:8080/vlaw_sim_sync", json={
-                        "timestamp": str(time.time()),
-                        "failure_reason": "z_height_loss",
-                        "telemetry_buffer": []
-                    }, timeout=2.0)
-                    
-                    if res.status_code == 200:
-                        json_resp = res.json()
-                        proxy_path = json_resp.get("trajectory_proxy", "")
-                        print(f"[VLAW RECOVERY] Successfully received proxy array map from Server: {proxy_path}")
-                        
-                        if Path(proxy_path).exists():
-                            with open(proxy_path, "rb") as f:
-                                rec_data = pickle.load(f)
-                            rec_array = rec_data.get("joint_angles", [])
-                            if len(rec_array) > 0:
-                                print(f"[VLAW INGEST] Appending {len(rec_array)} frames of .pkl Array Trajectory into live Physics Loop!")
-                                for row in rec_array:
-                                    trajectory.append({"_pkl_array": row})
-                                print("[VLAW EXECUTING] Continuing Simulation to attempt recovery...")
-                                fallen = False # Soft reset the fail state to observe recovery dynamics
-                        else:
-                            print(f"[VLAW ERROR] The trajectory proxy path does not exist on disk: {proxy_path}")
-                except Exception as e:
-                    print(f"[VLAW NETWORK ERROR] POST requested failed. Local server down? {e}")
+            # ── fall-test: cut PD for 15 viewer frames after hold phase ─────────
+            if fall_test and not vlaw_fired and anim_frame_idx == hold_frames:
+                current_target = np.zeros(model.nu)
+
+            # ── VLAW fall watcher ─────────────────────────────────────────────
+            if vlaw and not vlaw_fired:
+                if diag["z"] < FALLEN_THRESHOLD:
+                    fall_tick_count += 1
+                    if fall_tick_count >= FALL_CONFIRM_TICKS:
+                        vlaw_fired = True
+                        fallen = True
+                        print(f"\n[VERDICT] FALLEN at t={data.time:.2f}s, Z={diag['z']:.4f}m")
+                        crash = {
+                            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                            "failure_reason": f"Z={diag['z']:.3f}m below threshold",
+                            "telemetry_buffer": [{"base_height": float(diag["z"]),
+                                                  "qpos": data.qpos[:7].tolist()}],
+                        }
+                        CRASH_STATE_PATH.write_text(__import__("json").dumps(crash, indent=2))
+                        print(f"[VLAW] Crash state → {CRASH_STATE_PATH.name}")
+                        try:
+                            res = requests.post(VLAW_SERVER_URL, json=crash, timeout=5.0)
+                            if res.status_code == 200:
+                                pkl_path = res.json().get("recovery_pkl", "")
+                                print(f"[VLAW] Server returned recovery pkl: {pkl_path}")
+                                if Path(pkl_path).exists():
+                                    recovery = pkl_to_target_list(pkl_path, model.nu)
+                                    print(f"[VLAW] Recovery loaded: {len(recovery)} frames")
+                                    for row in recovery:
+                                        trajectory.append({"_pkl_array": row})
+                                    fallen = False
+                                else:
+                                    print(f"[VLAW] pkl path not found on disk: {pkl_path}")
+                            else:
+                                print(f"[VLAW] Server error {res.status_code}")
+                        except Exception as e:
+                            print(f"[VLAW] POST failed: {e}")
+                else:
+                    fall_tick_count = 0
 
             # ── Viewer sync ───────────────────────────────────────────────────
             viewer.sync()
@@ -404,6 +432,14 @@ def main():
         "--hold", type=float, default=5.0,
         help="Seconds to hold STABLE_BALANCE_POSE before animation (default: 5.0)",
     )
+    parser.add_argument(
+        "--vlaw", action="store_true",
+        help="Enable VLAW fall detection and recovery loop (requires server.py running)",
+    )
+    parser.add_argument(
+        "--fall-test", action="store_true",
+        help="Cut PD after hold phase to induce a controlled fall for VLAW testing",
+    )
     args = parser.parse_args()
 
     if args.list:
@@ -414,7 +450,8 @@ def main():
             print(f"  {name:<30} ({len(frames)} frames, {duration:.1f}s)")
         return
 
-    run(animation_name=args.animation, hold_seconds=args.hold)
+    run(animation_name=args.animation, hold_seconds=args.hold,
+        vlaw=args.vlaw, fall_test=args.fall_test)
 
 
 if __name__ == "__main__":

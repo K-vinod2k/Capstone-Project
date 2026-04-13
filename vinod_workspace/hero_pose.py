@@ -12,8 +12,6 @@ Negative shoulder_roll  = arm moves inward (adduction)
 Positive elbow          = elbow bends (flexion)
 """
 
-import math
-import numpy as np
 
 # ─── CORE STATIC POSES ─────────────────────────────────────────────────────
 
@@ -211,24 +209,24 @@ def animation_spider_man_landing() -> list:
     }
 
     landing_pose = {
-        # Lower body - Spider-Man crouch
-        "left_hip_pitch_joint": -1.2,    # Left leg deeper crouch
-        "left_knee_joint": 1.8,          # Left knee forward
-        "left_ankle_pitch_joint": -0.8,
-        "right_hip_pitch_joint": -0.6,   # Right leg extended back
+        # Lower body - shallowed crouch to keep pelvis above 0.4m ZMP threshold
+        "left_hip_pitch_joint": -0.9,    # Reduced from -1.2
+        "left_knee_joint": 1.3,          # Reduced from 1.8: deep knee was dropping pelvis to 0.378m
+        "left_ankle_pitch_joint": -0.5,  # Reduced from -0.8
+        "right_hip_pitch_joint": -0.6,
         "right_knee_joint": 0.8,
         "right_ankle_pitch_joint": -0.4,
 
         # Upper body - iconic landing
-        "left_shoulder_pitch_joint": -1.0,   # Left arm: hand touching ground
+        "left_shoulder_pitch_joint": -1.0,
         "left_shoulder_roll_joint": 0.3,
         "left_elbow_joint": 1.2,
-        "right_shoulder_pitch_joint": 0.5,   # Right arm: balancing
+        "right_shoulder_pitch_joint": 0.5,
         "right_elbow_joint": 0.8,
 
         # Torso
-        "waist_pitch_joint": -0.8,      # Forward lean for balance
-        "waist_yaw_joint": -0.2,        # Slight rotation
+        "waist_pitch_joint": -0.4,      # Reduced from -0.8: less forward lean
+        "waist_yaw_joint": -0.2,
     }
 
     rise = {
@@ -383,13 +381,13 @@ def animation_hulk_smash() -> list:
     }
 
     overhead = {
-        "left_shoulder_pitch_joint": -2.5,
-        "left_shoulder_roll_joint": 0.4,
-        "left_elbow_joint": 0.2,
-        "right_shoulder_pitch_joint": -2.5,
-        "right_shoulder_roll_joint": -0.4,
-        "right_elbow_joint": 0.2,
-        "waist_pitch_joint": 0.25,  # Lean back for momentum
+        "left_shoulder_pitch_joint": -0.7,   # Bilateral cap: -1.0+ pushes CoM past ZMP on G1
+        "left_shoulder_roll_joint": 0.3,
+        "left_elbow_joint": 0.3,
+        "right_shoulder_pitch_joint": -0.7,
+        "right_shoulder_roll_joint": -0.3,
+        "right_elbow_joint": 0.3,
+        "waist_pitch_joint": 0.35,           # Backward lean to counterbalance
     }
 
     smash = {
@@ -399,17 +397,17 @@ def animation_hulk_smash() -> list:
         "right_shoulder_pitch_joint": 0.9,
         "right_shoulder_roll_joint": -0.2,
         "right_elbow_joint": 0.6,
-        "waist_pitch_joint": -0.5,  # Lean WAY forward on impact
+        "waist_pitch_joint": -0.2,  # Reduced: -0.5 caused CoM past ZMP
     }
 
-    impact = {**smash, "waist_pitch_joint": -0.6}  # Maximum lean
+    impact = {**smash, "waist_pitch_joint": -0.25}  # Reduced from -0.6
 
     return animate([
         (neutral,  0.3),
         (spread,   0.4),     # HULK SPREAD!
-        (overhead, 0.45),    # Arms go UP
-        (smash,    0.12),    # SMASH! (fast)
-        (impact,   0.1),
+        (overhead, 0.6),     # Arms go UP (slower for balance)
+        (smash,    0.5),     # SMASH! — slowed from 0.12s to reduce angular momentum
+        (impact,   0.4),
         (impact,   0.9),     # Hold the ground impact
         (spread,   0.4),     # Rise again
         (neutral,  0.4),
@@ -504,25 +502,25 @@ def animation_thor_lightning() -> list:
     neutral = {**DEFAULT_POSE}
 
     raise_hammer = {
-        "right_shoulder_pitch_joint": -1.8,
+        "right_shoulder_pitch_joint": -1.0,  # Capped to keep CoM stable
         "right_shoulder_roll_joint": -0.15,
         "right_elbow_joint": 0.3,
         "right_wrist_pitch_joint": 0.2,
         "left_shoulder_pitch_joint": 0.3,
         "left_shoulder_roll_joint": 0.4,
         "left_elbow_joint": 0.6,
-        "waist_pitch_joint": 0.1,
+        "waist_pitch_joint": 0.2,            # Lean back to counterbalance single raised arm
         "waist_yaw_joint": 0.1,
     }
 
     apex = {
-        "right_shoulder_pitch_joint": -2.8,  # Arm fully skyward
+        "right_shoulder_pitch_joint": -1.0,  # Single raised arm — manageable with waist lean
         "right_shoulder_roll_joint": -0.1,
         "right_elbow_joint": 0.05,
-        "left_shoulder_pitch_joint": -0.2,
+        "left_shoulder_pitch_joint": 0.2,    # Left arm stays back to counterbalance
         "left_shoulder_roll_joint": 0.5,
         "left_elbow_joint": 0.4,
-        "waist_pitch_joint": 0.15,  # Lean back heroically
+        "waist_pitch_joint": 0.25,           # Back lean to counterbalance single raised arm
     }
 
     # Slight tremble for lightning effect (two oscillations)
@@ -530,13 +528,13 @@ def animation_thor_lightning() -> list:
     tremble_b = {**apex, "right_shoulder_roll_joint": -0.1, "right_wrist_yaw_joint": -0.2}
 
     strike = {
-        "right_shoulder_pitch_joint": -2.8,
+        "right_shoulder_pitch_joint": -1.0,
         "right_shoulder_roll_joint": -0.1,
         "right_elbow_joint": 0.05,
         "left_shoulder_pitch_joint": 0.2,
         "left_shoulder_roll_joint": 0.6,
         "left_elbow_joint": 0.5,
-        "waist_pitch_joint": 0.2,
+        "waist_pitch_joint": 0.25,
     }
 
     majesty = {
@@ -552,13 +550,13 @@ def animation_thor_lightning() -> list:
     return animate([
         (neutral,    0.3),
         (raise_hammer, 0.5),
-        (apex,       0.35),
-        (tremble_a,  0.12),   # ⚡ Trembles
-        (tremble_b,  0.12),
-        (tremble_a,  0.12),
-        (strike,     0.08),   # LIGHTNING STRIKES!
-        (strike,     0.7),    # Hold the power
-        (majesty,    0.5),    # Arms spread in godly majesty
+        (apex,       0.5),     # Slower raise for balance
+        (tremble_a,  0.2),     # Slowed from 0.12s
+        (tremble_b,  0.2),
+        (tremble_a,  0.2),
+        (strike,     0.3),     # Slowed from 0.08s
+        (strike,     0.7),     # Hold the power
+        (majesty,    0.5),
         (neutral,    0.5),
     ])
 

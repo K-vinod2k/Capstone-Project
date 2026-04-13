@@ -21,8 +21,7 @@ class SemanticSearch:
 
         distances, indices = self.index.search(query_vector.astype('float32'), k)
 
-        if distances[0][0] > 0.5:
-            return self.sentences[indices[0][0]]
+        return self.sentences[indices[0][0]]
 
 def prompt_format(input_text, persona):
     return f"""
@@ -52,28 +51,33 @@ class RobotPersona:
         device = "cuda" if torch.cuda.is_available() else device
 
         self.pipe = pipeline("text-generation",
-                             model="google/gemma-3-1b-it", 
+                             model="Qwen/Qwen2.5-0.5B-Instruct",
                              device=device,
                              dtype=torch.bfloat16)
         
         self.messages = [[{"role": "system",
-                           "content": [{"type": "text", 
-                                        "text": f"You are role-playing as {self.persona}."}]}]]
-        
-    def forward(self, input_text):
-        self.messages[0].append({"role": "user",
-                               "content": [{"type": "text",
-                                            "text": prompt_format(input_text, self.persona)},]})
-        
-        llm_output = self.pipe(self.messages, 
-                               max_new_tokens=50, 
-                               generation_config=None)[0][0]["generated_text"][-1]
-        
-        self.messages[0].append(llm_output)
+                           "content": f"You are role-playing as {self.persona}."}]]
 
+    def forward(self, input_text):
+        gesture_file = self.search_model.query(input_text)
+        replies = {
+            "wave": "Hey there! *waves*",
+            "flex": "Nobody is stronger than me!",
+            "punch": "Take that!",
+            "hulk_smash": "HULK SMASH!",
+            "iron_man_repulsor": "Repulsors online. Back off.",
+            "spider_man_web_shoot": "Your friendly neighborhood Spider-Man!",
+            "spider_man_landing": "Just dropped in.",
+            "captain_america_shield": "I can do this all day.",
+            "thor_lightning": "I am the God of Thunder!",
+            "wolverine_claws": "I'm the best there is at what I do.",
+        }
+        name = gesture_file.replace("_kinematics.pkl", "") if gesture_file else "wave"
+        text = replies.get(name, "Hero mode activated!")
+        print(f"[ROBOT] {text}")
         return {
-            "text": llm_output['content'],
-            "gesture": os.path.join(self.movement_directory, self.search_model.query(input_text + " " + llm_output['content']))
+            "text": text,
+            "gesture": os.path.join(self.movement_directory, gesture_file) if gesture_file else None
         }
 
 if __name__ == "__main__":
