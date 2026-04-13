@@ -223,7 +223,7 @@ class RealDeployController:
 def main():
     parser = argparse.ArgumentParser(description="Full-Body 500Hz PD Kinematic Deployment")
     parser.add_argument("--pkl", required=True, help="Path to .pkl array file")
-    parser.add_argument("--iface", default="lo", help="'lo' for sim testing, 'eth0' for real hardware")
+    parser.add_argument("--iface", default="enp0s31f6", help="Network interface (default: enp0s31f6 for iotlab Linux)")
     parser.add_argument("--domain", type=int, default=0, help="DDS Domain ID (default: 0 for real G1)")
     parser.add_argument("--speed", type=float, default=1.0, help="Speed multiplier (0.5 = half speed)")
     parser.add_argument("--peer", default="", help="Robot IP for unicast DDS peer discovery (e.g. 192.168.123.164). Required for real hardware.")
