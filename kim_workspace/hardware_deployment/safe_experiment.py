@@ -81,8 +81,8 @@ def send_zero_torque(pub: ChannelPublisher, n: int = 20):
 
 
 def confirm(prompt: str) -> bool:
-    ans = input(f"\n{prompt} [YES/no] ").strip()
-    return ans.upper() == "YES" or ans == ""
+    ans = input(f"\n{prompt} [y/n, Enter=yes] ").strip()
+    return ans.upper() in ("YES", "Y") or ans == ""
 
 
 def wait_for_state(state_holder, timeout=5.0) -> bool:
@@ -181,7 +181,7 @@ def phase1_wiggle(pub: ChannelPublisher, state_holder: list) -> bool:
     # Profile: ramp up 2s → hold 1s → ramp down 2s
     ramp_ticks = int(2.0 * CTRL_HZ)
     hold_ticks = int(1.0 * CTRL_HZ)
-    total      = ramp_ticks + hold_ticks + ramp_ticks
+    total      = ramp_ticks + hold_ticks + ramp_ticks + 1  # +1 so final tick reaches exactly 0
 
     cmd = make_zero_cmd()
     cmd.motor_cmd[IDX_L_SHOULDER_PITCH].kp = KP
@@ -209,8 +209,10 @@ def phase1_wiggle(pub: ChannelPublisher, state_holder: list) -> bool:
                 q_target = TARGET * (tick / ramp_ticks)
             elif tick < ramp_ticks + hold_ticks:
                 q_target = TARGET
-            else:
+            elif tick < total - 1:
                 q_target = TARGET * (1.0 - (tick - ramp_ticks - hold_ticks) / ramp_ticks)
+            else:
+                q_target = 0.0  # final tick: exactly zero
 
             cmd.motor_cmd[IDX_L_SHOULDER_PITCH].q = float(q_target)
             cmd.crc = crc.Crc(cmd)
