@@ -203,15 +203,17 @@ class RealDeployController:
             self._cmd.crc = self._crc.Crc(self._cmd)
             publisher.Write(self._cmd)
 
-            # Diagnostic telemetry: show commanded vs actual encoder for both arms
+            # Diagnostic telemetry: commanded vs encoder for shoulder pitch+roll on both arms
             if int(t * CTRL_HZ) % (int(CTRL_HZ // 5)) == 0:
-                # Left arm: L_shoulder_pitch(13), L_shoulder_roll(14)
-                # Right arm: R_shoulder_pitch(18), R_shoulder_roll(19)
-                l_cmd  = float(interp_q[13]);  l_enc  = self.current_state.motor_state[13].q
-                r_cmd  = float(interp_q[18]);  r_enc  = self.current_state.motor_state[18].q
-                print(f"Frame {float_idx:>6.1f}/{self.num_frames} | "
-                      f"L_sp cmd={l_cmd:>6.3f} enc={l_enc:>6.3f} | "
-                      f"R_sp cmd={r_cmd:>6.3f} enc={r_enc:>6.3f}", end="\r")
+                lp_c = float(interp_q[13]); lp_e = self.current_state.motor_state[13].q
+                lr_c = float(interp_q[14]); lr_e = self.current_state.motor_state[14].q
+                rp_c = float(interp_q[18]); rp_e = self.current_state.motor_state[18].q
+                rr_c = float(interp_q[19]); rr_e = self.current_state.motor_state[19].q
+                print(f"\nFr={float_idx:>5.0f} "
+                      f"| L_pitch c={lp_c:>6.3f} e={lp_e:>6.3f}"
+                      f"| L_roll  c={lr_c:>6.3f} e={lr_e:>6.3f}"
+                      f"| R_pitch c={rp_c:>6.3f} e={rp_e:>6.3f}"
+                      f"| R_roll  c={rr_c:>6.3f} e={rr_e:>6.3f}")
                 
             elapsed = time.monotonic() - loop_start
             time.sleep(max(0, CTRL_DT - elapsed))
