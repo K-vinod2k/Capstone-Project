@@ -4,123 +4,85 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI-powered robotics capstone with two active sub-projects exploring humanoid robot control via voice and video. The primary project is **Mascot Unitree (HeroPose)**.
+Unitree G1 Capstone: voice/text → superhero persona → AI video → human pose extraction → robot joint angles → (optional) real hardware. Two machines collaborate: **Vinod's Mac** runs the video/motion/persona pipeline; **Kim's GPU Linux machine** runs Isaac Lab RL training and hardware DDS control.
 
-## Sub-Projects
-
-| Project | Purpose | Status |
-|---------|---------|--------|
-| `Mascot Unitree/` | Voice-driven hero persona control for Unitree G1 robot | Primary/Active |
-| `video2robot/` | Modular video-to-robot-motion pipeline | Stable framework |
+```
+vinod_workspace/   — Mac-side: persona, video→motion pipeline, physics eval, hardware deploy
+kim_workspace/     — Linux GPU: Isaac Lab RL training, hardware deployment utilities, movement PKLs
+main.py            — Root CLI entry point (text or voice → persona → PKL replay)
+```
 
 ---
 
-## Mascot Unitree (HeroPose)
+## vinod_workspace (Mac Pipeline)
 
-**Pipeline:** Voice/Text → Persona Detection (Qwen2.5-72B) → Physics Gate (Cosmos-Reason2) → AI Video Generation → Motion Extraction → MuJoCo Simulation → React Dashboard → (optional) Real Robot
+**End-to-end flow:** `main.py` → `persona_brain.py` (Qwen2.5-72B) → gesture description → `video2robot/` pipeline (Veo/Sora → PromptHMR → GMR) → PKL → `mujoco_physics_eval.py` → (if safe) `deploy_real.py`
 
 ### Commands
 
 ```bash
-# Backend (FastAPI on port 8080)
-cd "Mascot Unitree"
-source capstone_env/bin/activate   # or: uv venv capstone_env && source capstone_env/bin/activate
-pip install -r requirements.txt
-python server.py
+# Root CLI — primary entry point
+python main.py --text "Hey Spider-Man!"   # text mode
+python main.py                            # voice mode (requires microphone + sounddevice)
 
-# CLI pipeline runner
-python run_pipeline.py                          # interactive text loop
-python run_pipeline.py --text "Hey Spider-Man!" # single prompt
-python run_pipeline.py --text "..." --no-video  # skip video gen (fast test)
-python run_pipeline.py --voice                  # microphone input
+# VLAW recovery sync server (FastAPI on port 8080)
+python vinod_workspace/server.py
 
-# Simulation from pkl or video
-python simulate.py --pkl output/<file>.pkl       # kinematic (exact pose replay)
-python simulate.py --pkl output/<file>.pkl --physics  # physics + gravity (PD actuators)
-python simulate.py --video output/ref_video.mp4  # runs Video2Robot pipeline
+# Physics validation
+python vinod_workspace/mujoco_physics_eval.py
 
-# Generate demo motion
-python make_demo_pkl.py   # → output/spiderman_webshoot.pkl
+# Render hero animation to MP4
+python vinod_workspace/render_animations.py --animation hulk_smash
 
-# Real robot deployment (Linux + Ethernet to G1 only)
-python deploy_real.py --pkl output/<file>.pkl --dry-run         # validate limits only
-python deploy_real.py --pkl output/<file>.pkl --iface eth0 --speed 0.5  # half speed
-python deploy_real.py --pkl output/<file>.pkl --iface eth0              # full speed
+# RAG dataset + retrieval
+python vinod_workspace/generate_rag_dataset.py
+python vinod_workspace/rag_retrieve.py
 
-# Frontend (React/Vite + Express proxy, port 3000)
-cd "Mascot Unitree/UI"
-npm install
-npm run dev    # starts Express server (tsx server.ts) which proxies to Python backend
-
-# TypeScript type-check (UI)
-npm run lint   # runs tsc --noEmit
+# Real robot deployment (Ubuntu + Ethernet to G1 only)
+python vinod_workspace/deploy_real.py --pkl kim_workspace/movements/<file>.pkl --dry-run
+python vinod_workspace/deploy_real.py --pkl kim_workspace/movements/<file>.pkl --iface eth0
 ```
 
 ### Environment Setup
 
-Copy `.env.example` to `.env` and set:
-- `ANTHROPIC_API_KEY` — Claude API used in `kinematic_brain.py` for LLM-grounded joint angle generation
-- `HF_TOKEN` — HuggingFace token for Qwen2.5-72B Inference API used in `persona_brain.py` (falls back to mock mode if missing)
-- `NVIDIA_API_KEY` — NVIDIA API for Cosmos-Reason2-2B VLM physics validation in `physics_validator.py`
-- `FAL_KEY` — fal.ai for LTX-Video 2.3 generation
-- `COLAB_URL` — Colab Pro ngrok URL as fallback for video generation (optional; skips fal.ai when set)
+Create `.env` in `vinod_workspace/` with:
+- `HF_TOKEN` — HuggingFace token for Qwen2.5-72B in `persona_brain.py` (falls back to mock mode without it)
+- `ANTHROPIC_API_KEY` — Claude API (used if LLM-grounded kinematics path is active)
+- `GOOGLE_API_KEY` — Google Veo video generation
+- `OPENAI_API_KEY` — OpenAI Sora (fallback video gen)
 
-### Architecture
+### Key Modules
 
-**Motion Generation (three-tier priority):**
-1. **Video2Robot extraction** — PromptHMR + GMR for human-to-robot retargeting (`v2r_integration.py`); requires conda envs `phmr` (Python 3.11) and `gmr` (Python 3.10)
-2. **LLM-grounded kinematics** — URDF joint limits injected into Claude prompt for ZMP-stable trajectories (`kinematic_brain.py`)
-3. **Hero animation library** — Named pose dicts; offline fallback, always available (`hero_pose.py`)
+- `persona_brain.py` — Qwen2.5-72B persona engine; HERO_REGISTRY maps keywords → 9 Marvel/DC characters; returns `spoken_reply`, `gesture_description`, `internal_reasoning` (SCoT); falls back to mock mode without `HF_TOKEN`
+- `hero_pose.py` — Static joint angle dicts + 10 named hero animation sequences; offline fallback, always available
+- `mujoco_physics_eval.py` — Runs PD-control sim in MuJoCo to verify poses before hardware; checks ZMP/CoM
+- `deploy_real.py` — 500 Hz PD control via unitree_sdk2py; reads encoder state → 3-second ease-in → plays PKL trajectory; dual-tier gains: Kp=200 legs/waist, Kp=60 arms; hard-kills all torque if any joint exceeds 10 rad/s
+- `render_animations.py` — Headless MuJoCo → MP4 for sim preview
+- `server.py` — Minimal FastAPI endpoint (`/vlaw_sim_sync`) that receives crash telemetry from Isaac Lab and returns recovery PKL path
+- `rag_retrieve.py` — FAISS semantic search (sentence-transformers all-MiniLM-L6-v2) to match user intent to nearest hero gesture PKL
 
-**pkl motion file format:** `dof_pos (N×29 joint angles)`, `root_pos (N×3)`, `root_rot (N×4 qxyzw)`, `fps`
+**G1 EDU Two-Computer Architecture:**
+- `192.168.123.161` — Locomotion computer (black box, runs Unitree's balance/locomotion controller, no SSH access)
+- `192.168.123.164` — Development computer (Jetson Orin NX, SSH: `unitree/123`, your code runs here)
+- High-level balance + low-level arm control simultaneously = **open research question** (no official Unitree answer). Current approach: release motion mode entirely via `MotionSwitcherClient.ReleaseMode()`, take full low-level control of all joints. Robot cannot walk while doing hero poses.
+- To exit debug mode: **reboot required** (L2+R2 → L2+A → L2+B enters debug mode; only exit is reboot).
 
-**Key modules:**
-- `server.py` — FastAPI orchestrator (port 8080); routes voice/text → persona → video → motion → simulation
-- `pipeline.py` — Core orchestration: `verify_stability()` physics gate, `render_mujoco_trajectory()`
-- `persona_brain.py` — Qwen2.5-72B (HuggingFace) persona engine; hero registry with trigger keywords; falls back to mock mode without `HF_TOKEN`
-- `kinematic_brain.py` — LLM-grounded joint angle generation with URDF constraints and MuJoCo CoM/ZMP validation
-- `physics_validator.py` — NVIDIA Cosmos-Reason2 VLM for bipedal stability checks against live G1 render
-- `hero_pose.py` — Named joint angle dicts for Spider-Man, Iron Man, Hulk, Captain America, Thor, Black Widow, Batman, Superman
-- `ltx_video_client.py` — LTX-Video 2.3 via fal.ai or Colab fallback
-- `v2r_integration.py` — Video2Robot pipeline integration
-- `UI/server.ts` — Express backend (TypeScript); API proxy to Python FastAPI + better-sqlite3
-- `deploy_real.py` — 500 Hz PD control via unitree_sdk2py; reads current joint state → eases to stand → eases to first pkl frame → plays trajectory with velocity limiting and joint clamping
+**Real robot prereqs:** Ubuntu + Ethernet to G1 at `192.168.123.x`; robot in DAMPING mode (L2+B on controller); keep L1+L2 e-stop ready.
 
-**MuJoCo render modes:**
-- Kinematic (default): joint angles set directly each frame, no gravity
-- Physics (`--physics`): PD actuators (kp=200, kd=10) + gravity + contact at 150 Hz
-
-**Real robot prereqs:** Ubuntu + Ethernet to G1 at `192.168.123.x`; robot must be in DAMPING mode (L2+B on controller); keep L1+L2 e-stop ready.
-
-**G1 Joint Map (29 DOF):**
-```
- 0-5:  left leg   (hip_pitch/roll/yaw, knee, ankle_pitch/roll)
- 6-11: right leg  (same)
-12:    waist_yaw
-13-14: waist_roll, waist_pitch  (passive in 23-DOF model)
-15-21: left arm   (shoulder_pitch/roll/yaw, elbow, wrist_roll/pitch/yaw)
-22-28: right arm  (same)
-```
-
-**MuJoCo models:** `unitree_mujoco/g1_23dof.xml`, `g1_29dof.xml`, `g1_29dof_pinned.xml`
-
-**Testing:** No automated test suite. Validate changes via CLI commands above (`--no-video` flag for fast iteration).
+**Safety constants in `deploy_real.py`:**
+- `VELOCITY_ABORT_THRESHOLD = 10.0` rad/s — instant torque kill
+- `CTRL_HZ = 500.0` — control loop frequency
+- Ease-in: 3-second linear interpolation from current encoder state to first PKL frame
 
 ---
 
-## video2robot
+## vinod_workspace/video2robot (Motion Pipeline)
 
-**Pipeline:** Prompt/Video → AI Video Generation (Veo/Sora) → PromptHMR Pose Extraction → SMPL-X → GMR Motion Retargeting → Robot Motion (pkl)
-
-**Requires two conda environments for GPU pipeline stages (scripts auto-switch via subprocess):**
-- `phmr` (Python 3.11) — PromptHMR pose extraction
-- `gmr` (Python 3.10) — GMR motion retargeting
-
-### Commands
+**Pipeline:** Text/Video → Veo/Sora (video gen) → PromptHMR (human pose, Python 3.11 `phmr` conda) → SMPL-X → GMR (retargeting, Python 3.10 `gmr` conda) → PKL
 
 ```bash
-cd video2robot
-pip install -e .   # installs `video2robot` CLI command
+cd vinod_workspace/video2robot
+pip install -e .   # installs `video2robot` CLI
 
 # Full pipeline
 python scripts/run_pipeline.py --action "wave hello"
@@ -131,7 +93,7 @@ python scripts/extract_pose.py
 python scripts/convert_to_robot.py
 python scripts/visualize.py
 
-# Web UI (FastAPI + Jinja2 + Viser 3D visualization, port 8000)
+# Web UI (FastAPI + Jinja2 + Viser 3D, port 8000)
 uvicorn web.app:app --host 0.0.0.0 --port 8000
 
 # Linting
@@ -139,21 +101,86 @@ ruff check .
 black .
 ```
 
-### Environment Setup
+Scripts auto-switch conda environments via subprocess (`run_in_conda()`). `third_party/` contains PromptHMR and GMR as git submodules (non-commercial research license).
 
-Copy `.env.example` to `.env` and set `GOOGLE_API_KEY` (Veo) and/or `OPENAI_API_KEY` (Sora).
+**Linting:** ruff + black, line-length 100, configured in `pyproject.toml`.
 
-### Architecture
+---
 
-- `video2robot/config.py` — Dataclass configs for all pipeline stages
-- `video2robot/video/` — Video generation clients (Veo, Sora, CogVideo) with prompt templates
-- `video2robot/pose/` — PromptHMR wrapper for human pose extraction
-- `video2robot/robot/` — GMR motion retargeting wrapper
-- `web/` — FastAPI + Jinja2 web UI; routers for projects, pipeline, files, and Viser 3D visualization
-- `third_party/` — PromptHMR and GMR as git submodules
+## kim_workspace (GPU Linux Machine)
 
-**Linting:** ruff + black, line-length 100, configured in `pyproject.toml`
+### RL Training (Isaac Lab)
 
-**License note:** PromptHMR (in `third_party/`) is non-commercial research only.
+Trains a PPO policy to track video-generated pose targets without falling. Requires Linux + NVIDIA GPU + Isaac Lab installed.
 
-**Supported robots:** Unitree G1, H1; Booster T1
+```bash
+# From inside Isaac Lab Python environment
+./isaaclab.sh -p kim_run/train.py --headless --num_envs 4096
+```
+
+Key files in `kim_workspace/rl_training/`:
+- `train.py` — Entry point; launches 4096 Isaac Lab env clones
+- `g1_rewards.py` — Pose-tracking reward (exponential kernel) + fall penalty (−100 if root Z < 0.4 m) + imitation recovery reward
+- `g1_randomization.py` — Domain randomization (mass, friction) for sim-to-real robustness
+- `sim_logger.py` — Monitors simulation state; on ZMP collapse or height < 0.4 m, POSTs to `vinod_workspace/server.py /vlaw_sim_sync` to trigger recovery animation
+- `vlaw_orchestrator.py` — Orchestrates Isaac Lab episode lifecycle + crash → recovery loop
+
+### Hardware Deployment
+
+Key files in `kim_workspace/hardware_deployment/`:
+- `g1_arm_replay_airborne.py` — Arm-only kinematic playback via DDS (used by `main.py` on hardware path)
+- `g1_encoder_monitor.py` — Reads real G1 joint encoders via DDS
+- `check_dds_connection.py` — DDS network diagnostics
+- `unitree_mujoco/` — Complete Unitree MuJoCo simulator (C++ + Python bindings); contains `unitree_robots/g1/` with URDF/MJCF assets
+
+### Movement PKLs
+
+Pre-recorded hero animation trajectories live in `kim_workspace/movements/`:
+```
+captain_america_shield_kinematics.pkl
+hulk_smash_kinematics.pkl
+iron_man_repulsor_kinematics.pkl
+spider_man_web_shoot_kinematics.pkl
+thor_lightning_kinematics.pkl
+wave_kinematics.pkl   # + others
+```
+
+---
+
+## PKL Format & Joint Map
+
+**PKL dict key:** `joint_angles` — shape `(N, 35)` — 35-motor hardware layout (indices 29–34 unused/extended)
+
+**G1 Joint Map (29 active DOF, within the 35-motor IDL):**
+```
+ 0-5:  left leg   (hip_pitch/roll/yaw, knee, ankle_pitch/roll)
+ 6-11: right leg  (same)
+12:    waist_yaw
+13-14: waist_roll, waist_pitch  (passive in 23-DOF model)
+15-21: left arm   (shoulder_pitch/roll/yaw, elbow, wrist_roll/pitch/yaw)
+22-28: right arm  (same)
+29-34: unused extended joints
+```
+
+**MuJoCo models** (in `kim_workspace/hardware_deployment/unitree_mujoco/unitree_robots/g1/`):
+- `g1_23dof.xml` — simplified model (no passive waist joints)
+- `g1_29dof.xml` — full model
+- `g1_29dof_pinned.xml` — pinned base (for arm-only testing)
+
+**23-DOF vs 29-DOF:** The 23-DOF model omits joints 13–14 (passive waist). PKLs generated by the video2robot pipeline use 29 DOF (indices 0–28). `remap_23dof.py` converts between representations — **do not apply it to PKLs before hardware deploy** (deploy_real.py expects the raw 29-DOF layout).
+
+---
+
+## VLAW Loop (Sim-to-Real Co-Improvement)
+
+When Isaac Lab detects a fall (root Z < 0.4 m), `sim_logger.py` sends telemetry to `vinod_workspace/server.py /vlaw_sim_sync`. The server returns a recovery PKL path; `vlaw_orchestrator.py` feeds this back into RL as imitation learning data. This creates a crash → synthetic recovery → retrain loop.
+
+---
+
+## Testing
+
+No automated test suite. Validate changes manually:
+- `python main.py --text "..."` for end-to-end pipeline smoke test
+- `python vinod_workspace/mujoco_physics_eval.py` to verify a pose is stable
+- `python vinod_workspace/deploy_real.py --dry-run` to validate joint limits before hardware
+- Check `_kpop/` for KPOP-style experiment logs documenting past hypotheses and failures
