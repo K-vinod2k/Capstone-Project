@@ -1,0 +1,24 @@
+Loading: scene.xml
+Model confirmed: nu=29, dt=0.002s
+Initial root Z: 0.7870m (target=0.787m)
+Loaded PKL: kim_workspace/movements/iron_man_repulsor_kinematics.pkl (419 frames @ 10.0fps)
+[LEG+WAIST MASK] Legs+waist locked to STABLE_BALANCE_POSE. Only arms (DOF 15-28) from PKL.
+Total trajectory: 469 frames (46.9s)
+
+============================================================
+FALSIFICATION BASELINE: Does the G1 hold STABLE_BALANCE_POSE?
+If root Z drops below 0.4m → pose is NOT physically grounded.
+============================================================
+
+[HEADLESS] Running simulation without viewer...
+t= 11.14s  [PKL_PLAYBACK          ]  Z=0.7584m  roll= -0.15°  pitch= -2.20°  RMS_err=0.1932rad  [STANDING]
+t= 15.08s  [PKL_PLAYBACK          ]  Z=0.7584m  roll= -0.18°  pitch= -2.20°  RMS_err=0.0407rad  [STANDING]
+t= 26.94s  [PKL_PLAYBACK          ]  Z=0.7582m  roll= -0.06°  pitch= -2.39°  RMS_err=0.1821rad  [STANDING]
+t= 39.52s  [PKL_PLAYBACK          ]  Z=0.7583m  roll= -0.04°  pitch= -2.27°  RMS_err=0.3683rad  [STANDING]
+
+============================================================
+RESULT: PASSED — Robot held upright for full trajectory.
+Final Z = 0.7578m  (Δ from init = -0.0292m)
+Next: run with --animation <name> to test dynamic poses.
+============================================================
+

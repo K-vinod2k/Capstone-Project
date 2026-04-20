@@ -10,6 +10,7 @@ Unitree G1 Capstone: voice/text → superhero persona → AI video → human pos
 vinod_workspace/   — Mac-side: persona, video→motion pipeline, physics eval, hardware deploy
 kim_workspace/     — Linux GPU: Isaac Lab RL training, hardware deployment utilities, movement PKLs
 main.py            — Root CLI entry point (text or voice → persona → PKL replay)
+example.py         — Standalone interactive demo (RAG → hero reply → animation)
 ```
 
 ---
@@ -25,6 +26,22 @@ main.py            — Root CLI entry point (text or voice → persona → PKL r
 python main.py --text "Hey Spider-Man!"   # text mode
 python main.py                            # voice mode (requires microphone + sounddevice)
 
+# Standalone interactive demo
+python example.py
+ROBOT_INTERFACE=eth0 python example.py   # real hardware
+
+# Progressive hardware safety test (run before deploy_real.py on new hardware)
+python kim_workspace/hardware_deployment/safe_experiment.py --interface eth0
+
+# Full deployment to real robot
+python vinod_workspace/deploy_real.py --pkl kim_workspace/movements/wave_kinematics.pkl \
+    --iface enp0s31f6 --speed 0.5
+# enp0s31f6 is the confirmed interface on iotlab Linux; --peer not required on Linux
+
+# Arm-only replay (gantry/suspended robot)
+python kim_workspace/hardware_deployment/g1_arm_replay_airborne.py \
+    --pkl kim_workspace/movements/wave_kinematics.pkl --both-arms
+
 # VLAW recovery sync server (FastAPI on port 8080)
 python vinod_workspace/server.py
 
@@ -38,9 +55,11 @@ python vinod_workspace/render_animations.py --animation hulk_smash
 python vinod_workspace/generate_rag_dataset.py
 python vinod_workspace/rag_retrieve.py
 
-# Real robot deployment (Ubuntu + Ethernet to G1 only)
-python vinod_workspace/deploy_real.py --pkl kim_workspace/movements/<file>.pkl --dry-run
-python vinod_workspace/deploy_real.py --pkl kim_workspace/movements/<file>.pkl --iface eth0
+# Inspect a PKL file (shape, joint ranges, velocity stats)
+python vinod_workspace/inspect_pkl.py kim_workspace/movements/hulk_smash_kinematics.pkl
+
+# Clamp PKL velocities to ≤ 2.0 rad/s (run before hardware deploy on new PKLs)
+python vinod_workspace/clamp_pkls.py
 ```
 
 ### Environment Setup
@@ -60,14 +79,29 @@ Create `.env` in `vinod_workspace/` with:
 - `render_animations.py` — Headless MuJoCo → MP4 for sim preview
 - `server.py` — Minimal FastAPI endpoint (`/vlaw_sim_sync`) that receives crash telemetry from Isaac Lab and returns recovery PKL path
 - `rag_retrieve.py` — FAISS semantic search (sentence-transformers all-MiniLM-L6-v2) to match user intent to nearest hero gesture PKL
+- `clamp_pkls.py` — Clamps all PKLs in `kim_workspace/movements/` to ≤ 2.0 rad/s inter-frame velocity; run before hardware deploy on new PKLs
 
 **G1 EDU Two-Computer Architecture:**
 - `192.168.123.161` — Locomotion computer (black box, runs Unitree's balance/locomotion controller, no SSH access)
 - `192.168.123.164` — Development computer (Jetson Orin NX, SSH: `unitree/123`, your code runs here)
-- High-level balance + low-level arm control simultaneously = **open research question** (no official Unitree answer). Current approach: release motion mode entirely via `MotionSwitcherClient.ReleaseMode()`, take full low-level control of all joints. Robot cannot walk while doing hero poses.
+- High-level balance + low-level arm control simultaneously **IS officially supported** via the `rt/arm_sdk` DDS topic with the weight bit at `motor_cmd[29].q` (Unitree issue [#108](https://github.com/unitreerobotics/unitree_sdk2_python/issues/108); upstream reference `g1_arm7_sdk_dds_example.py`). **Two deployment paths now exist:**
+  - (a) **`deploy_real.py`** — calls `MotionSwitcherClient.ReleaseMode()` and takes full 23-DOF low-level control of legs + arms. Robot cannot walk or self-balance while this runs. Use for full-body hero poses on a gantry.
+  - (b) **`vinod_workspace/g1_arm_replay_loco.py`** — publishes arm-only commands on `rt/arm_sdk` while the locomotion controller keeps legs and waist balanced. Weight bit blends arm-SDK authority with `BalanceStand()`. Robot can walk while the arm gesture plays. This is the default for arm-only replay. See `kim_workspace/hardware_deployment/arm_sdk_first_run_guide.md` for the four-gate pre-flight procedure.
 - To exit debug mode: **reboot required** (L2+R2 → L2+A → L2+B enters debug mode; only exit is reboot).
 
 **Real robot prereqs:** Ubuntu + Ethernet to G1 at `192.168.123.x`; robot in DAMPING mode (L2+B on controller); keep L1+L2 e-stop ready.
+
+**Confirmed hardware deployment sequence (validated 2026-04-13):**
+1. Robot in DAMPING mode (L2+B), gantry attached
+2. Run `g1_encoder_monitor.py` — confirm joint 13 = L_shoulder_pitch
+3. Run `safe_experiment.py --interface eth0` (phases 0→1→2)
+4. Run `deploy_real.py --pkl ... --iface enp0s31f6 --speed 0.5`
+
+**DDS notes:**
+- Linux direct Ethernet: CycloneDDS multicast works, `--peer` not required
+- macOS: requires explicit `--peer 192.168.123.164`
+- `mode_machine` must be read from the first `LowState` and echoed in every `LowCmd` — hardcoding 0 causes silent discard
+- CRC must be recomputed before every `publisher.Write(cmd)` call — missing CRC causes silent discard
 
 **Safety constants in `deploy_real.py`:**
 - `VELOCITY_ABORT_THRESHOLD = 10.0` rad/s — instant torque kill
@@ -128,7 +162,8 @@ Key files in `kim_workspace/rl_training/`:
 ### Hardware Deployment
 
 Key files in `kim_workspace/hardware_deployment/`:
-- `g1_arm_replay_airborne.py` — Arm-only kinematic playback via DDS (used by `main.py` on hardware path)
+- `g1_arm_replay_airborne.py` — Arm-only kinematic playback via DDS; 200 Hz, Kp=20 (loose, ~10% of sim). Default: left arm only; pass `--both-arms` to command both.
+- `safe_experiment.py` — 3-phase progressive safety test (DDS readback → single joint wiggle → wave animation); run before any full deployment on new hardware
 - `g1_encoder_monitor.py` — Reads real G1 joint encoders via DDS
 - `check_dds_connection.py` — DDS network diagnostics
 - `unitree_mujoco/` — Complete Unitree MuJoCo simulator (C++ + Python bindings); contains `unitree_robots/g1/` with URDF/MJCF assets
@@ -147,27 +182,30 @@ wave_kinematics.pkl   # + others
 
 ---
 
-## PKL Format & Joint Map
+## Joint Map — 23-DOF Hardware IDL
 
-**PKL dict key:** `joint_angles` — shape `(N, 35)` — 35-motor hardware layout (indices 29–34 unused/extended)
+All PKL files and hardware deployment scripts use the G1 23-DOF IDL layout. `deploy_real.py` and `g1_arm_replay_airborne.py` both expect this scheme. `ARM_JOINTS = range(13, 23)`.
 
-**G1 Joint Map (29 active DOF, within the 35-motor IDL):**
 ```
- 0-5:  left leg   (hip_pitch/roll/yaw, knee, ankle_pitch/roll)
- 6-11: right leg  (same)
-12:    waist_yaw
-13-14: waist_roll, waist_pitch  (passive in 23-DOF model)
-15-21: left arm   (shoulder_pitch/roll/yaw, elbow, wrist_roll/pitch/yaw)
-22-28: right arm  (same)
-29-34: unused extended joints
+ 0-11: legs (hip_pitch/roll/yaw, knee, ankle x2, both sides)
+12:    waist_yaw (TORSO)
+13-17: left arm  (L_shoulder_pitch/roll/yaw, L_elbow_pitch, L_elbow_roll)
+18-22: right arm (R_shoulder_pitch/roll/yaw, R_elbow_pitch, R_elbow_roll)
+23-34: unused (zero torque only)
 ```
 
-**MuJoCo models** (in `kim_workspace/hardware_deployment/unitree_mujoco/unitree_robots/g1/`):
-- `g1_23dof.xml` — simplified model (no passive waist joints)
-- `g1_29dof.xml` — full model
-- `g1_29dof_pinned.xml` — pinned base (for arm-only testing)
+**R_shoulder_roll sign flip:** Index 19 (R_shoulder_roll) is negated in `deploy_real.py` because the right arm motor is physically mirrored. Applied in both ease-in and playback phases. Under active testing — see `_kpop/` logs.
 
-**23-DOF vs 29-DOF:** The 23-DOF model omits joints 13–14 (passive waist). PKLs generated by the video2robot pipeline use 29 DOF (indices 0–28). `remap_23dof.py` converts between representations — **do not apply it to PKLs before hardware deploy** (deploy_real.py expects the raw 29-DOF layout).
+---
+
+## PKL Format
+
+**PKL dict key:** `joint_angles` — shape `(N, 35)` — 35 columns matching the hardware IDL motor count.
+
+All movement PKLs in `kim_workspace/movements/` have been processed by `clamp_pkls.py` and are clamped to ≤ 2.0 rad/s inter-frame velocity. New PKLs from the video2robot pipeline must be clamped before hardware deployment.
+
+**MuJoCo model** (in `kim_workspace/hardware_deployment/unitree_mujoco/unitree_robots/g1/`):
+- `g1_23dof.xml` — G1 23-DOF simulation model (loaded via `scene.xml`)
 
 ---
 
@@ -177,10 +215,19 @@ When Isaac Lab detects a fall (root Z < 0.4 m), `sim_logger.py` sends telemetry 
 
 ---
 
+## Known Open Issues
+
+- **Right arm not commanding in `main.py` and `example.py`:** Both `_replay_hardware()` functions import and use only `LEFT_ARM` from `g1_arm_replay_airborne`. Pass `LEFT_ARM + RIGHT_ARM` to `ArmReplayController` to enable both arms.
+- **No ease-out phase:** After PKL playback finishes, scripts drop directly to zero torque (limp). A researcher noted this can stress joints. An ease-out (interpolate from last frame back to neutral over ~2s) should be added before zero-torque disengage.
+- **Motion dynamics:** All PKLs were clamped to ≤ 2.0 rad/s; `g1_arm_replay_airborne.py` uses Kp=20 (10% of sim Kp) for deliberately loose tracking. If motion feels sluggish, increase Kp or use `deploy_real.py` (Kp=60) instead.
+- **R_shoulder_roll sign flip (index 19):** Under active investigation in `_kpop/` logs. Currently applied in `deploy_real.py` but not in `g1_arm_replay_airborne.py`.
+
+---
+
 ## Testing
 
 No automated test suite. Validate changes manually:
 - `python main.py --text "..."` for end-to-end pipeline smoke test
 - `python vinod_workspace/mujoco_physics_eval.py` to verify a pose is stable
-- `python vinod_workspace/deploy_real.py --dry-run` to validate joint limits before hardware
+- `python kim_workspace/hardware_deployment/safe_experiment.py --interface lo` (sim) before hardware
 - Check `_kpop/` for KPOP-style experiment logs documenting past hypotheses and failures

@@ -1,0 +1,45 @@
+Loaded 419 frames × 35 cols from kim_workspace/movements/iron_man_repulsor_kinematics.pkl
+
+23-DOF PKL → arm-SDK remap table
+==============================================================================
+PKL idx  23-DOF name           → arm-SDK idx   arm-SDK name           q[rad]
+------------------------------------------------------------------------------
+13       L_SHOULDER_PITCH      15              L_SHOULDER_PITCH        0.000
+14       L_SHOULDER_ROLL       16              L_SHOULDER_ROLL         0.000
+15       L_SHOULDER_YAW        17              L_SHOULDER_YAW          0.000
+16       L_ELBOW_PITCH         18              L_ELBOW                 0.000
+17       L_ELBOW_ROLL          19              L_WRIST_ROLL            0.000
+18       R_SHOULDER_PITCH      22              R_SHOULDER_PITCH        0.000
+19       R_SHOULDER_ROLL       23              R_SHOULDER_ROLL        -0.000  (sign flip: +0.000 → -0.000)
+20       R_SHOULDER_YAW        24              R_SHOULDER_YAW          0.000
+21       R_ELBOW_PITCH         25              R_ELBOW                 0.000
+22       R_ELBOW_ROLL          26              R_WRIST_ROLL            0.000
+------------------------------------------------------------------------------
+Uncommanded on 23-DOF hardware: [20, 21, 27, 28] (L/R wrist_pitch, L/R wrist_yaw — no physical motors)
+Enable weight bit: motor_cmd[29].q (ramped 0→1 on engage, 1→0 on release)
+==============================================================================
+
+[T2] Loco-aware trajectory limit report
+========================================================================================
+Caps: vel ≤ 1.00 rad/s  |  jerk ≤ 5.00 rad/s^3
+Requested --speed: 0.500
+----------------------------------------------------------------------------------------
+arm-SDKname                      v_pkl    a_pkl     j_pkl    v_run     j_run  v_OK  j_OK
+----------------------------------------------------------------------------------------
+15    L_SHOULDER_PITCH          0.208    5.937    89.062    0.104    11.133   YES    NO
+16    L_SHOULDER_ROLL           0.090    2.568    38.526    0.045     4.816   YES   YES
+17    L_SHOULDER_YAW            0.000    0.000     0.000    0.000     0.000   YES   YES
+18    L_ELBOW                   0.500   14.250   213.750    0.250    26.719   YES    NO
+19    L_WRIST_ROLL              0.000    0.000     0.000    0.000     0.000   YES   YES
+22    R_SHOULDER_PITCH          0.498    9.931   148.958    0.249    18.620   YES    NO
+23    R_SHOULDER_ROLL           0.130    2.569    38.542    0.065     4.818   YES   YES
+24    R_SHOULDER_YAW            0.000    0.000     0.000    0.000     0.000   YES   YES
+25    R_ELBOW                   0.481   12.380   185.693    0.241    23.212   YES    NO
+26    R_WRIST_ROLL              0.000    0.000     0.000    0.000     0.000   YES   YES
+----------------------------------------------------------------------------------------
+Worst at user_speed=0.500:  v_runtime=0.250 rad/s   j_runtime=26.719 rad/s^3
+Slowdown factors:  k_vel=1.000  k_jerk=1.748  k_effective=1.748
+[LIMIT ACTIVE] effective_speed = 0.500 / 1.748 = 0.286
+========================================================================================
+
+[DRY-RUN] --dry-run-limits set; exiting before DDS init.

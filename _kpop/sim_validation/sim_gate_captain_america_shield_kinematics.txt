@@ -1,0 +1,25 @@
+Loading: scene.xml
+Model confirmed: nu=29, dt=0.002s
+Initial root Z: 0.7870m (target=0.787m)
+Loaded PKL: kim_workspace/movements/captain_america_shield_kinematics.pkl (450 frames @ 10.0fps)
+[LEG+WAIST MASK] Legs+waist locked to STABLE_BALANCE_POSE. Only arms (DOF 15-28) from PKL.
+Total trajectory: 500 frames (50.0s)
+
+============================================================
+FALSIFICATION BASELINE: Does the G1 hold STABLE_BALANCE_POSE?
+If root Z drops below 0.4m → pose is NOT physically grounded.
+============================================================
+
+[HEADLESS] Running simulation without viewer...
+t=  5.18s  [PKL_PLAYBACK          ]  Z=0.7584m  roll= -0.03°  pitch= -2.15°  RMS_err=0.3602rad  [STANDING]
+t=  7.06s  [PKL_PLAYBACK          ]  Z=0.7584m  roll= -0.08°  pitch= -2.15°  RMS_err=0.3566rad  [STANDING]
+t= 18.74s  [PKL_PLAYBACK          ]  Z=0.7584m  roll= -0.12°  pitch= -2.17°  RMS_err=0.3754rad  [STANDING]
+t= 32.38s  [PKL_PLAYBACK          ]  Z=0.7583m  roll= -0.10°  pitch= -2.30°  RMS_err=0.4112rad  [STANDING]
+t= 46.70s  [PKL_PLAYBACK          ]  Z=0.7584m  roll= -0.04°  pitch= -2.13°  RMS_err=0.2495rad  [STANDING]
+
+============================================================
+RESULT: PASSED — Robot held upright for full trajectory.
+Final Z = 0.7578m  (Δ from init = -0.0292m)
+Next: run with --animation <name> to test dynamic poses.
+============================================================
+

@@ -1,0 +1,22 @@
+Loading: scene.xml
+Model confirmed: nu=29, dt=0.002s
+Initial root Z: 0.7870m (target=0.787m)
+Loaded PKL: kim_workspace/movements/wave_kinematics.pkl (294 frames @ 10.0fps)
+[LEG+WAIST MASK] Legs+waist locked to STABLE_BALANCE_POSE. Only arms (DOF 15-28) from PKL.
+Total trajectory: 344 frames (34.4s)
+
+============================================================
+FALSIFICATION BASELINE: Does the G1 hold STABLE_BALANCE_POSE?
+If root Z drops below 0.4m → pose is NOT physically grounded.
+============================================================
+
+[HEADLESS] Running simulation without viewer...
+t= 12.36s  [PKL_PLAYBACK          ]  Z=0.7582m  roll= -0.02°  pitch= -2.39°  RMS_err=0.1979rad  [STANDING]
+t= 24.58s  [PKL_PLAYBACK          ]  Z=0.7582m  roll= -0.02°  pitch= -2.38°  RMS_err=0.3535rad  [STANDING]
+
+============================================================
+RESULT: PASSED — Robot held upright for full trajectory.
+Final Z = 0.7578m  (Δ from init = -0.0292m)
+Next: run with --animation <name> to test dynamic poses.
+============================================================
+

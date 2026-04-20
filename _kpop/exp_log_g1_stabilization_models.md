@@ -250,7 +250,8 @@ These are the minimum additions needed to turn C8-VALIDATED from "partial" into 
 **Prediction:** Recursive search of the repo finds zero `.onnx` files, zero directories named `holosoma*` / `gr00t*` / `sonic*`, and zero code files referencing the artifact names.
 
 **Test:**
-```bash
+
+```sh
 find . -type f -name "*.onnx"                                   # repo-wide
 find . -type d \( -iname "*holosoma*" -o -iname "*gr00t*" \
                   -o -iname "*groot*" -o -iname "*sonic*" \)
@@ -445,5 +446,46 @@ All three statements are now contradicted by evidence from H5:
 - (d) The 29↔23 remap for policy *outputs* (previous work only validated the PKL input remap). Holosoma emits 29-D; our robot has 23 motors; the output-side remap is a mirror question of H4.
 
 Pausing here. The plan-quality problems now enumerated are actionable without exhausting more of the budget, and three of them (H6 artifact gap, H7 obs builder scope, H9 naming) are the ones most likely to trip the next implementer. Ready to apply fixes (plan text + CLAUDE.md edits) on request.
+
+---
+
+## Follow-up batch: full PKL-library sim sweep (2026-04-20, post-summary)
+
+User request: maximum sim-side validation, do not drive hardware. Ran `--dry-run-map`, `--dry-run-limits --speed 0.5`, and `mujoco_physics_eval.py --legs-only-hold --headless --hold 1` against every PKL in `kim_workspace/movements/` (10 files). Raw logs + matrix in [`_kpop/sim_validation/README.md`](sim_validation/README.md).
+
+### Key findings
+
+- **10/10 PKLs pass `--dry-run-map`** with the expected arm-SDK index table, R_SHOULDER_ROLL sign flip, and `ELBOW_ROLL ≡ WRIST_ROLL` semantic relabel. No missing or malformed trajectories.
+- **10/10 PKLs trigger `[T2] LIMIT ACTIVE`** under default caps (vel ≤ 1.0 rad/s, jerk ≤ 5.0 rad/s³) at `--speed 0.5`. `k_effective` ranges from 1.382 (`spider_man_landing`) to 1.748 (`hulk_smash`, `iron_man_repulsor`). Every PKL will play at 28–36 % of its native rate. Shape preserved, timing stretched — exactly as `[T2]` is designed.
+- **9/10 PKLs pass the legs-only-hold sim gate** with uniform `ΔZ = −2.9 cm` (passive PD gravity sag — the arm disturbance is below this noise floor).
+- **1/10 FAILS the sim gate** — `spider_man_landing_kinematics`: Final Z 0.365 m, ΔZ −42 cm. Driven by L_ELBOW native jerk of 105 rad/s³ and L_SHOULDER_PITCH 87 rad/s³, the two highest in the library. **Sim ≠ hardware** (sim has no `BalanceStand()`), but this PKL is the outlier and should not be the first hardware Gate D.
+
+### Sim gate bug found (noted, not fixed)
+
+`mujoco_physics_eval.py` only sets `fallen=True` inside the `--vlaw` branch. Without that flag, the script prints `RESULT: PASSED` unconditionally. The `Final Z` numeric IS correct and has been captured for all 10 PKLs; the headline verdict should be disregarded. Recommend fixing (set `fallen = (final_z < FALLEN_THRESHOLD)` regardless of `--vlaw`) in a later pass — not blocking the hardware gate sequence.
+
+### Updated C8-VALIDATED state
+
+| Sub-claim | Prior | After sweep |
+|---|---|---|
+| C8-DESIGN | TRUE | TRUE |
+| C8-IMPL | TRUE (high conf) | TRUE (high conf, sweep shows `[T2]` active on all 10 PKLs) |
+| C8-VALIDATED (sim-side) | PARTIAL — wave only | **TRUE for 9/10 PKLs sim-side**; `spider_man_landing` flagged as outlier |
+| C8-VALIDATED (hardware) | OPEN | OPEN — requires iotlab gate sequence (A→B→C→D) |
+
+### Hardware-run ordering (recommended)
+
+1. **wave** (Gate D default, smallest PKL, passes sim, 294 frames).
+2. flex, spider_man_web_shoot, wolverine_claws, punch, captain_america_shield, thor_lightning.
+3. After those confirm the path is solid: iron_man_repulsor, hulk_smash (longest duration × most aggressive jerk).
+4. **spider_man_landing LAST.** Sim says it destabilises a passive stance; only run after `BalanceStand()` has been proven to absorb peer PKLs' disturbance.
+
+### Artifacts committed alongside this log
+
+- `_kpop/sim_validation/README.md` — matrix + reproduction steps.
+- `_kpop/sim_validation/dry_run_map_*.txt` × 10, `dry_run_limits_*.txt` × 10, `sim_gate_*.txt` × 10.
+- `kim_workspace/hardware_deployment/iotlab_gate_runner.sh` — interactive Gate A→B→C→D orchestrator with operator-confirmation pauses at each transition.
+
+**Hypotheses used: 10 / 40** (unchanged — this was validation, not new hypothesis testing).
 
 ---

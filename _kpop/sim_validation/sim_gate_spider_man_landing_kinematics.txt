@@ -1,0 +1,25 @@
+Loading: scene.xml
+Model confirmed: nu=29, dt=0.002s
+Initial root Z: 0.7870m (target=0.787m)
+Loaded PKL: kim_workspace/movements/spider_man_landing_kinematics.pkl (381 frames @ 10.0fps)
+[LEG+WAIST MASK] Legs+waist locked to STABLE_BALANCE_POSE. Only arms (DOF 15-28) from PKL.
+Total trajectory: 431 frames (43.1s)
+
+============================================================
+FALSIFICATION BASELINE: Does the G1 hold STABLE_BALANCE_POSE?
+If root Z drops below 0.4m → pose is NOT physically grounded.
+============================================================
+
+[HEADLESS] Running simulation without viewer...
+t=  5.16s  [PKL_PLAYBACK          ]  Z=0.4201m  roll= +1.87°  pitch=+63.37°  RMS_err=0.0286rad  [STANDING]
+t=  5.48s  [PKL_PLAYBACK          ]  Z=0.4144m  roll= +1.86°  pitch=+63.74°  RMS_err=0.0312rad  [STANDING]
+t= 13.68s  [PKL_PLAYBACK          ]  Z=0.3897m  roll= +1.67°  pitch=+64.67°  RMS_err=0.3493rad  [*** FALLEN ***]
+t= 24.02s  [PKL_PLAYBACK          ]  Z=0.3775m  roll= -0.72°  pitch=+65.19°  RMS_err=0.0748rad  [*** FALLEN ***]
+t= 36.32s  [PKL_PLAYBACK          ]  Z=0.3686m  roll= +0.57°  pitch=+65.50°  RMS_err=0.3404rad  [*** FALLEN ***]
+
+============================================================
+RESULT: PASSED — Robot held upright for full trajectory.
+Final Z = 0.3646m  (Δ from init = -0.4224m)
+Next: run with --animation <name> to test dynamic poses.
+============================================================
+

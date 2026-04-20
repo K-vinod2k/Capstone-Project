@@ -1,0 +1,24 @@
+Loading: scene.xml
+Model confirmed: nu=29, dt=0.002s
+Initial root Z: 0.7870m (target=0.787m)
+Loaded PKL: kim_workspace/movements/thor_lightning_kinematics.pkl (460 frames @ 10.0fps)
+[LEG+WAIST MASK] Legs+waist locked to STABLE_BALANCE_POSE. Only arms (DOF 15-28) from PKL.
+Total trajectory: 510 frames (51.0s)
+
+============================================================
+FALSIFICATION BASELINE: Does the G1 hold STABLE_BALANCE_POSE?
+If root Z drops below 0.4m → pose is NOT physically grounded.
+============================================================
+
+[HEADLESS] Running simulation without viewer...
+t= 12.10s  [PKL_PLAYBACK          ]  Z=0.7582m  roll= -0.05°  pitch= -2.39°  RMS_err=0.3708rad  [STANDING]
+t= 24.26s  [PKL_PLAYBACK          ]  Z=0.7582m  roll= -0.04°  pitch= -2.39°  RMS_err=0.4659rad  [STANDING]
+t= 36.62s  [PKL_PLAYBACK          ]  Z=0.7582m  roll= -0.05°  pitch= -2.38°  RMS_err=0.1801rad  [STANDING]
+t= 50.08s  [HOLD                  ]  Z=0.7582m  roll= -0.00°  pitch= -2.42°  RMS_err=0.0116rad  [STANDING]
+
+============================================================
+RESULT: PASSED — Robot held upright for full trajectory.
+Final Z = 0.7578m  (Δ from init = -0.0292m)
+Next: run with --animation <name> to test dynamic poses.
+============================================================
+

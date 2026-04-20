@@ -1,0 +1,22 @@
+Loaded 726 frames × 35 cols from kim_workspace/movements/hulk_smash_kinematics.pkl
+
+23-DOF PKL → arm-SDK remap table
+==============================================================================
+PKL idx  23-DOF name           → arm-SDK idx   arm-SDK name           q[rad]
+------------------------------------------------------------------------------
+13       L_SHOULDER_PITCH      15              L_SHOULDER_PITCH        0.000
+14       L_SHOULDER_ROLL       16              L_SHOULDER_ROLL         0.000
+15       L_SHOULDER_YAW        17              L_SHOULDER_YAW          0.000
+16       L_ELBOW_PITCH         18              L_ELBOW                 0.000
+17       L_ELBOW_ROLL          19              L_WRIST_ROLL            0.000
+18       R_SHOULDER_PITCH      22              R_SHOULDER_PITCH        0.000
+19       R_SHOULDER_ROLL       23              R_SHOULDER_ROLL        -0.000  (sign flip: +0.000 → -0.000)
+20       R_SHOULDER_YAW        24              R_SHOULDER_YAW          0.000
+21       R_ELBOW_PITCH         25              R_ELBOW                 0.000
+22       R_ELBOW_ROLL          26              R_WRIST_ROLL            0.000
+------------------------------------------------------------------------------
+Uncommanded on 23-DOF hardware: [20, 21, 27, 28] (L/R wrist_pitch, L/R wrist_yaw — no physical motors)
+Enable weight bit: motor_cmd[29].q (ramped 0→1 on engage, 1→0 on release)
+==============================================================================
+
+[DRY-RUN] --dry-run-map set; exiting before limits and DDS init.
