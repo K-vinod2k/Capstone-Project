@@ -191,6 +191,16 @@ class G1NoFallController:
         time.sleep(0.5)
         self._loco.Squat2StandUp()
 
+    def lie_to_stand(self) -> None:
+        """Get-up from lying flat (face up) on hard, flat, rough ground.
+
+        Warning from Unitree: the ground MUST be hard, flat, and rough.
+        On slippery or soft surfaces this can fail. Use only with gantry.
+        """
+        self._loco.Damp()
+        time.sleep(0.5)
+        self._loco.Lie2StandUp()
+
     def loco_wave(self, turn: bool = False) -> None:
         """Unitree's built-in wave hand. Body keeps balancing."""
         self._loco.WaveHand(turn)
@@ -397,17 +407,28 @@ class G1NoFallController:
 # ---------------------------------------------------------------------------
 
 _MENU = """
+IMPORTANT STARTUP ORDER:
+    On fresh boot the robot is in damping / squat / lying state.
+    HighStand / Move / canned-gesture / play commands will FAIL until you
+    first run one of the getting-up sequences below:
+
+        squat2stand   -> if robot is crouched (typical on gantry)
+        lie2stand     -> if robot is lying flat face-up on hard ground
+
+    After the robot is standing, the rest of the menu works.
+
 Commands (robot self-balances throughout — it will not fall):
-    stand                      HighStand (default)
+    damp                       Damping (passive hold) — always safe
+    squat2stand                Damp -> Squat2StandUp (RUN FIRST on gantry)
+    lie2stand                  Damp -> Lie2StandUp (from flat floor only)
+    stand                      HighStand (requires robot already standing)
     low                        LowStand
     fwd [m/s] [sec]            Move forward   (default 0.2 m/s, 2 s)
     back [m/s] [sec]           Move backward
     left [m/s] [sec]           Side-step left
     right [m/s] [sec]          Side-step right
     turn [rad/s] [sec]         Rotate in place
-    damp                       Damping (passive hold)
     zero                       Zero torque (motors OFF)
-    squat2stand                Squat -> stand-up sequence
     loco_wave [turn]           Built-in wave hand
     canned NAME                Canned arm gesture (use `list` to see names)
     play PATH                  Play hero PKL on arms only (rt/arm_sdk overlay)
@@ -454,6 +475,8 @@ def _interactive(ctrl: G1NoFallController, flip_r: bool) -> None:
                 ctrl.zero_torque()
             elif op == "squat2stand":
                 ctrl.squat_to_stand()
+            elif op == "lie2stand":
+                ctrl.lie_to_stand()
             elif op == "loco_wave":
                 ctrl.loco_wave(turn=(len(parts) > 1 and parts[1] == "turn"))
             elif op == "canned":
@@ -493,12 +516,14 @@ def main() -> None:
     print("[ok] OEM locomotion stabilizer is ACTIVE. Robot will self-balance.")
 
     if args.pkl:
-        print(f"[play] Standing up...")
+        print("[play] Damp -> Squat2StandUp -> HighStand sequence...")
+        ctrl.squat_to_stand()
+        time.sleep(2.5)
         ctrl.stand()
-        time.sleep(2.0)
+        time.sleep(1.5)
         print(f"[play] Playing arm gesture from {args.pkl}")
         ctrl.play_arm_gesture(args.pkl, flip_r_shoulder_roll=args.flip_r_shoulder_roll)
-        print(f"[play] Done. Damping.")
+        print("[play] Done. Damping.")
         ctrl.damp()
         return
 
