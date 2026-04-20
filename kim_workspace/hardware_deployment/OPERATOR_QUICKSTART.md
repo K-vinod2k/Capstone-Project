@@ -39,7 +39,7 @@ Never type `YES` if you didn't visually confirm the gate. A `YES` is your signat
 
 ### Dev computer (iotlab)
 
-- [ ] SSH'd into the Jetson at `192.168.123.164` (`unitree/123`).
+- [ ] At a terminal on the iotlab dev computer — **directly, not SSH**. Keyboard/monitor/KVM attached to the Jetson.
 - [ ] `cd` into the repo root.
 - [ ] `git pull` — `iotlab_gate_runner.sh` is only in commit `c43b190` and later.
 - [ ] Interface name confirmed: `ip link show | grep -E 'UP|enp0s'` — default is `enp0s31f6`.

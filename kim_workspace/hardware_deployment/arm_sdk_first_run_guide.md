@@ -39,7 +39,8 @@ and each confirms one specific thing before the next unlocks:
 - Controller/pendant in operator's hand for L1+L2 E-stop
 
 ### Network (iotlab Linux dev computer)
-- Direct Ethernet to the G1's locomotion computer at `192.168.123.161` (dev computer at `192.168.123.164`, SSH `unitree/123`)
+- Operator works **at a terminal on the iotlab dev computer itself** (keyboard + monitor attached to the Jetson). Do **not** run these gates over SSH — `git pull`, `g1_encoder_monitor.py`, and `g1_arm_replay_loco.py` all run as the local logged-in user on the iotlab machine.
+- Direct Ethernet from the iotlab dev computer (Jetson Orin NX, `192.168.123.164`) to the G1's locomotion computer (`192.168.123.161`). Reference only — operator does not type these.
 - Interface `enp0s31f6` confirmed on iotlab — adjust with `--iface` if yours differs
 - CycloneDDS multicast enabled (no `--peer` required on Linux direct)
 - `unitree_sdk2_python` installed and importable

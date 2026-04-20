@@ -30,17 +30,20 @@ Plan's Phase 3 ordering ("Unitree-first") is therefore correct conditional on ha
 
 ### 1.1 Run the four hardware gates on `wave_kinematics.pkl`
 
-1. SSH to iotlab dev computer:
-   ```bash
-   ssh unitree@192.168.123.164
+1. At a terminal on the iotlab dev computer (directly — you are physically at the keyboard, not SSH):
+
+```sh
    cd /path/to/Capstone
    git pull
-   ```
+```
+
 2. Put robot in `BalanceStand` (L2+A → L2+B → Start on pendant). Gantry loaded. L1+L2 in hand.
 3. Run the interactive gate runner:
-   ```bash
+
+```sh
    bash kim_workspace/hardware_deployment/iotlab_gate_runner.sh
-   ```
+```
+
 4. Type `YES` between each gate **only after** visually confirming per [`OPERATOR_QUICKSTART.md`](./kim_workspace/hardware_deployment/OPERATOR_QUICKSTART.md) §3.
 
 **Success criteria:**
@@ -55,7 +58,7 @@ Plan's Phase 3 ordering ("Unitree-first") is therefore correct conditional on ha
 
 After 1.1 passes, you don't need to re-run A/B/C. Direct Gate D on the next safest PKLs per the ordering in [`_kpop/sim_validation/README.md`](./_kpop/sim_validation/README.md#recommended-hardware-first-run-ordering):
 
-```bash
+```sh
 python vinod_workspace/g1_arm_replay_loco.py \
     --pkl kim_workspace/movements/flex_kinematics.pkl \
     --iface enp0s31f6 --speed 0.5
@@ -94,18 +97,20 @@ After each, note: did `[T2]` slowdown feel appropriate? Any torso pitch excursio
 Found during the sim sweep: `fallen` is only set to `True` inside the `--vlaw` branch. Without that flag, `RESULT: PASSED` prints regardless of `Final Z`. The `Final Z` numeric is correct — only the headline verdict is wrong.
 
 **Fix:**
+
 ```python
 # In vinod_workspace/mujoco_physics_eval.py around line 476:
 if not fallen:
     fallen = final_diag["z"] < FALLEN_THRESHOLD
 ```
+
 Then verdict/print logic uses the same `fallen` flag. Add a one-line regression test: run on `spider_man_landing` and assert verdict = `FAILED`.
 
 ### 2.3 Add `SKIP_ABC=1` env toggle to the gate runner
 
 Right now `iotlab_gate_runner.sh` re-runs Gates A/B/C every invocation. For operators running multiple PKLs in one session, this is wasteful. Add:
 
-```bash
+```sh
 if [ "${SKIP_ABC:-0}" != "1" ]; then
     gate_A; gate_B; gate_C
 else
@@ -130,6 +135,7 @@ Find the two call sites (grep for `LEFT_ARM` in `main.py` and `example.py`), cha
 Known open issue per CLAUDE.md. Currently after playback the script drops to zero torque (limp), which stresses joints. Mirror the ease-out in `g1_arm_replay_loco.py`: interpolate last commanded q → neutral over 2 s, then zero-torque.
 
 Reference implementation:
+
 ```python
 # In deploy_real.py, after playback loop:
 for step in range(int(2.0 * CTRL_HZ)):
@@ -212,12 +218,14 @@ Action: after artifact download (§3.5), introspect ONNX metadata. Check the `ac
 ### 4.2 Holosoma first sim run
 
 Once §3.5/§3.6/§3.7/§4.1 are done:
-```bash
+
+```sh
 .venv/bin/python vinod_workspace/mujoco_physics_eval.py \
     --controller holosoma \
     --holosoma-onnx <path> \
     --headless --hold 2
 ```
+
 Expected: robot stands on its own (Holosoma IS a locomotion policy, unlike our PKLs). If it falls, the issue is observation building or output remap, not the policy.
 
 ### 4.3 GR00T-WBC first sim run
@@ -246,10 +254,12 @@ Add a GitHub Action: on any PR that touches `kim_workspace/movements/*.pkl`, run
 ### 5.3 Gate runner logging
 
 `iotlab_gate_runner.sh` output currently goes to stdout only. Add `tee`:
-```bash
+
+```sh
 LOG="session_logs/gate_run_$(date +%Y%m%d_%H%M%S).log"
 main "$@" 2>&1 | tee "$LOG"
 ```
+
 Post-mortems then have a full timestamped record.
 
 ### 5.4 Fix missing `run_gemma.py` tracking
