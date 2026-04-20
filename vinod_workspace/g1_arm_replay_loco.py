@@ -9,7 +9,7 @@ SAFETY PRECONDITIONS (do not skip):
   1. Robot is in a stable stance (BalanceStand() or equivalent) BEFORE running.
   2. Operator holds physical L1+L2 E-Stop.
   3. First run uses `--speed 0.5` and small-amplitude PKLs (e.g. wave).
-  4. `--dry-run-map` has been executed and the remap table inspected.
+  4. `--dry-run-map` and `--dry-run-limits` have been executed and inspected.
 
 Contract (derived from unitree_sdk2_python_repo g1_arm7_sdk_dds_example.py):
   - Publisher: `rt/arm_sdk` (NOT `rt/lowcmd`).
@@ -29,14 +29,41 @@ Contract (derived from unitree_sdk2_python_repo g1_arm7_sdk_dds_example.py):
 R_SHOULDER_ROLL sign flip (23-DOF idx 19) is preserved from deploy_real.py:
   the right arm motor is physically mirrored; negation restores symmetry.
 
+Loco-aware trajectory limiting ([T2]):
+  Under rt/arm_sdk, arm motion is a disturbance the balance controller must
+  reject. deploy_real.py's 2.0 rad/s inter-frame clamp was tuned for full
+  low-level takeover and is too aggressive here. We preserve pose shape
+  exactly and negotiate *timing* instead: compute a global slowdown factor k
+  such that no commanded arm joint violates --max-arm-vel or --max-arm-jerk
+  after playback at user --speed, and apply effective_speed = --speed / k.
+  See compute_loco_speed_cap() below.
+
 Usage:
-    python g1_arm_replay_loco.py --pkl ../kim_workspace/movements/wave_kinematics.pkl --dry-run-map
-    python g1_arm_replay_loco.py --pkl ../kim_workspace/movements/wave_kinematics.pkl --iface eth0 --speed 0.5
+    # 1. Inspect the 23→arm-SDK remap (no DDS):
+    python g1_arm_replay_loco.py --pkl wave_kinematics.pkl --dry-run-map
+
+    # 2. Inspect vel/jerk vs caps and required slowdown (no DDS):
+    python g1_arm_replay_loco.py --pkl wave_kinematics.pkl --dry-run-limits
+
+    # 3. [Gate A] Readback-only DDS smoke test (run g1_encoder_monitor.py first).
+
+    # 4. [Gate B] Single-joint physical identity jog (no --pkl needed).
+    #    Validates the remap maps arm-SDK idx N to the expected physical motor.
+    python g1_arm_replay_loco.py --jog-test 19 --jog-amp 0.2 --iface enp0s31f6
+
+    # 5. [Gate C] Engage-only protocol test (no --pkl needed, no arm motion).
+    #    Ramps weight 0 → 0.1 → 0 with arms echoing current encoder q.
+    python g1_arm_replay_loco.py --engage-only --engage-weight 0.1 --iface enp0s31f6
+
+    # 6. Full hardware run (loco-controlled stance, conservative speed):
+    python g1_arm_replay_loco.py --pkl wave_kinematics.pkl --iface enp0s31f6 --speed 0.5
+
+See: kim_workspace/hardware_deployment/arm_sdk_first_run_guide.md for the full procedure.
 
 TODO extension points (tracked in plan g1-loco-arm-integration):
   [T1] IK-based semantic projection for PKLs that do encode wrist motion.
-  [T2] Locomotion-aware trajectory limiting (tighter velocity/jerk caps than
-       full-takeover replay, since arm motion is a disturbance to the balancer).
+  [T2] DONE: loco-aware trajectory limiting via global speed cap. Preserves
+       pose shape; only timing is negotiated to satisfy vel/jerk caps.
   [T3] Optional arm gravity compensation layered on top of loco FF.
 """
 
@@ -103,6 +130,17 @@ KD_ARM = 1.5
 
 # Safety: instant torque-kill if any commanded arm joint exceeds this speed.
 VELOCITY_ABORT_THRESHOLD = 8.0  # rad/s
+
+# [T2] Loco-aware motion limits.
+# Starting points (tune from hardware observation):
+#   - vel 1.0 rad/s: ~1/2 of deploy_real.py's 2.0 rad/s clamp. Under loco, each
+#     rad/s of arm angular velocity at ~2 kg·m^2 arm inertia is ~2 N·m of
+#     shoulder torque the balancer must reject.
+#   - jerk 5.0 rad/s^3: a step change in arm acceleration couples into CoM as
+#     an impulse; keep the third derivative bounded so the balancer sees
+#     "smooth" disturbances instead of impulses.
+DEFAULT_MAX_ARM_VEL = 1.0   # rad/s per commanded arm joint
+DEFAULT_MAX_ARM_JERK = 5.0  # rad/s^3 per commanded arm joint
 
 CTRL_HZ = 50.0
 CTRL_DT = 1.0 / CTRL_HZ
@@ -191,10 +229,141 @@ def print_remap_table(first_frame: np.ndarray) -> None:
     print("=" * 78)
 
 
+def compute_loco_speed_cap(
+    frames: np.ndarray,
+    user_speed: float,
+    max_vel: float,
+    max_jerk: float,
+    pkl_fps: float = PKL_FPS,
+) -> tuple[float, dict]:
+    """
+    [T2] Compute an effective playback speed such that no commanded arm joint
+    violates --max-arm-vel or --max-arm-jerk at runtime.
+
+    Derivatives are computed once at the PKL sample rate. Under playback at
+    speed factor s, the effective values scale as:
+        vel_runtime  = vel_pkl  * s
+        jerk_runtime = jerk_pkl * s^3
+    So the required slowdown k (multiplicative on user_speed) is:
+        k_v = (max|vel_pkl|  * user_speed) / max_vel       if > 1, else 1
+        k_j = ((max|jerk_pkl| * user_speed^3) / max_jerk)^(1/3) if > 1, else 1
+        k   = max(1, k_v, k_j)
+        effective_speed = user_speed / k
+
+    Pose shape is preserved exactly; only global timing slows down. This is
+    the right trade-off for hero gestures — the pose is the artistic intent,
+    the timing is negotiable. The opposite (smoothing amplitudes to keep
+    timing) would distort the gesture.
+
+    Returns (effective_speed, diagnostics). `diagnostics` contains per-joint
+    peak vel/jerk at both PKL rate and runtime rate, plus the limiting joint.
+    """
+    if len(frames) < 4:
+        return user_speed, {
+            "note": "Fewer than 4 frames; cannot compute meaningful jerk.",
+            "effective_speed": user_speed,
+            "k": 1.0,
+            "per_joint": [],
+        }
+
+    dt_pkl = 1.0 / pkl_fps
+    # Extract only the commanded arm columns from the PKL and apply the sign flip
+    # policy so we measure the motion the hardware will actually see.
+    pkl_cols = sorted(REMAP_23_TO_ARMSDK.keys())
+    q = np.stack([
+        -frames[:, c] if c in SIGN_FLIP_PKL_IDX else frames[:, c]
+        for c in pkl_cols
+    ], axis=1)  # shape (N, 10)
+
+    vel = np.gradient(q, dt_pkl, axis=0)
+    acc = np.gradient(vel, dt_pkl, axis=0)
+    jerk = np.gradient(acc, dt_pkl, axis=0)
+
+    peak_vel = np.max(np.abs(vel), axis=0)   # per-joint peak vel at PKL rate
+    peak_acc = np.max(np.abs(acc), axis=0)
+    peak_jerk = np.max(np.abs(jerk), axis=0)  # per-joint peak jerk at PKL rate
+
+    # Worst offender across all commanded arm joints, scaled to user_speed.
+    worst_v_runtime = float(np.max(peak_vel) * user_speed)
+    worst_j_runtime = float(np.max(peak_jerk) * (user_speed ** 3))
+
+    k_v = worst_v_runtime / max_vel if worst_v_runtime > max_vel else 1.0
+    k_j = (worst_j_runtime / max_jerk) ** (1.0 / 3.0) if worst_j_runtime > max_jerk else 1.0
+    k = max(1.0, k_v, k_j)
+    effective_speed = user_speed / k
+
+    # Per-joint report (names in arm-SDK space for readability on hardware).
+    per_joint = []
+    for i, pkl_idx in enumerate(pkl_cols):
+        armsdk_idx, armsdk_name = REMAP_23_TO_ARMSDK[pkl_idx]
+        per_joint.append({
+            "pkl_idx": pkl_idx,
+            "armsdk_idx": armsdk_idx,
+            "armsdk_name": armsdk_name,
+            "peak_vel_pkl": float(peak_vel[i]),
+            "peak_acc_pkl": float(peak_acc[i]),
+            "peak_jerk_pkl": float(peak_jerk[i]),
+            "peak_vel_runtime": float(peak_vel[i] * user_speed),
+            "peak_jerk_runtime": float(peak_jerk[i] * (user_speed ** 3)),
+        })
+
+    diagnostics = {
+        "user_speed": user_speed,
+        "effective_speed": effective_speed,
+        "k": k,
+        "k_vel": k_v,
+        "k_jerk": k_j,
+        "max_vel_cap": max_vel,
+        "max_jerk_cap": max_jerk,
+        "worst_vel_runtime": worst_v_runtime,
+        "worst_jerk_runtime": worst_j_runtime,
+        "per_joint": per_joint,
+    }
+    return effective_speed, diagnostics
+
+
+def print_limit_report(diag: dict) -> None:
+    print("\n[T2] Loco-aware trajectory limit report")
+    print("=" * 88)
+    print(f"Caps: vel ≤ {diag['max_vel_cap']:.2f} rad/s  |  jerk ≤ {diag['max_jerk_cap']:.2f} rad/s^3")
+    print(f"Requested --speed: {diag['user_speed']:.3f}")
+    print("-" * 88)
+    print(f"{'arm-SDK':<6}{'name':<22}{'v_pkl':>9}{'a_pkl':>9}{'j_pkl':>10}"
+          f"{'v_run':>9}{'j_run':>10}{'v_OK':>6}{'j_OK':>6}")
+    print("-" * 88)
+    for pj in diag["per_joint"]:
+        v_ok = "YES" if pj["peak_vel_runtime"] <= diag["max_vel_cap"] else "NO"
+        j_ok = "YES" if pj["peak_jerk_runtime"] <= diag["max_jerk_cap"] else "NO"
+        print(f"{pj['armsdk_idx']:<6}{pj['armsdk_name']:<22}"
+              f"{pj['peak_vel_pkl']:>9.3f}"
+              f"{pj['peak_acc_pkl']:>9.3f}"
+              f"{pj['peak_jerk_pkl']:>10.3f}"
+              f"{pj['peak_vel_runtime']:>9.3f}"
+              f"{pj['peak_jerk_runtime']:>10.3f}"
+              f"{v_ok:>6}{j_ok:>6}")
+    print("-" * 88)
+    print(f"Worst at user_speed={diag['user_speed']:.3f}:  "
+          f"v_runtime={diag['worst_vel_runtime']:.3f} rad/s   "
+          f"j_runtime={diag['worst_jerk_runtime']:.3f} rad/s^3")
+    print(f"Slowdown factors:  k_vel={diag['k_vel']:.3f}  k_jerk={diag['k_jerk']:.3f}  "
+          f"k_effective={diag['k']:.3f}")
+    if diag["k"] > 1.0:
+        print(f"[LIMIT ACTIVE] effective_speed = {diag['user_speed']:.3f} / {diag['k']:.3f} "
+              f"= {diag['effective_speed']:.3f}")
+    else:
+        print(f"[WITHIN LIMITS] effective_speed = {diag['effective_speed']:.3f} "
+              "(no slowdown applied)")
+    print("=" * 88)
+
+
 class ArmSdkLocoController:
-    def __init__(self, frames: np.ndarray, speed_factor: float):
+    def __init__(self, frames: np.ndarray | None, speed_factor: float):
         if not SDK_AVAILABLE:
             raise RuntimeError("unitree_sdk2py not importable. Install on the deployment machine.")
+        # frames may be None for pre-flight gate modes (engage_only, jog_test)
+        # that validate the arm_sdk protocol without streaming a trajectory.
+        if frames is None:
+            frames = np.zeros((0, NUM_MOTOR), dtype=np.float32)
         self.frames = frames
         self.speed_factor = speed_factor
         self.active_fps = PKL_FPS * speed_factor
@@ -279,11 +448,15 @@ class ArmSdkLocoController:
             time.sleep(max(0.0, CTRL_DT - (time.monotonic() - loop_start)))
 
     def playback(self, publisher: ChannelPublisher) -> None:
-        """Stream mapped PKL frames at active_fps with cubic Hermite interpolation."""
+        """Stream mapped PKL frames at active_fps with cubic Hermite interpolation.
+
+        active_fps is set in __init__ from speed_factor, which has already been
+        reduced by compute_loco_speed_cap() in main(). So per-joint vel/jerk at
+        this playback rate satisfies --max-arm-vel and --max-arm-jerk.
+        """
         assert self.current_state is not None
         print(f"[PLAYBACK] Streaming {self.num_frames} frames at {self.active_fps:.1f} fps "
               f"({CTRL_HZ:.0f} Hz control)")
-        # [T2] TODO: loco-aware trajectory limiting (tighter velocity/jerk caps here).
         # Precompute central-difference velocities for Hermite interp (same as deploy_real.py).
         vel = np.zeros_like(self.frames)
         for i in range(1, self.num_frames - 1):
@@ -344,13 +517,193 @@ class ArmSdkLocoController:
             time.sleep(0.01)
         print("[DONE] arm_sdk released. Locomotion controller has full authority.")
 
-    def run(self, publisher: ChannelPublisher) -> None:
+    def _wait_for_low_state(self, timeout_s: float = 5.0) -> bool:
+        """Block until first LowState arrives (so mode_machine and encoders are populated).
+        Returns False on timeout so callers can fail fast without commanding actuators.
+        """
         print("Waiting for first LowState from robot...")
-        deadline = time.monotonic() + 5.0
+        deadline = time.monotonic() + timeout_s
         while self.current_state is None and time.monotonic() < deadline:
             time.sleep(0.05)
         if self.current_state is None:
-            print("[ERROR] No LowState received in 5s. DDS bridge inactive.")
+            print(f"[ERROR] No LowState received in {timeout_s:.1f}s. "
+                  "DDS bridge inactive or wrong --iface.")
+            return False
+        return True
+
+    def engage_only(self, publisher: ChannelPublisher,
+                    max_weight: float = 0.1,
+                    hold_seconds: float = 3.0) -> None:
+        """Gate C — protocol acceptance test.
+
+        Ramps arm_sdk weight 0 → max_weight → 0 while commanding every arm joint to
+        its *current* encoder q each tick (identity controller). Validates that the
+        locomotion computer accepts `rt/arm_sdk` publications (CRC, mode_machine,
+        weight-bit protocol) WITHOUT commanding any arm motion. A passing run shows
+        the robot standing normally with no perceptible arm twitch.
+
+        Failure modes are all safe:
+          - Arms don't respond and robot keeps standing → topic not accepted (check
+            firmware, --iface, mode_machine capture).
+          - Arms subtly stiffen at max_weight → protocol accepted. This is the PASS.
+          - Velocity abort triggers → loco is rejecting our commands; this method
+            calls _check_velocity_abort every tick and backs out via weight=0.
+
+        Precondition: robot must be in BalanceStand() (loco active), not DAMPING.
+        """
+        if not self._wait_for_low_state():
+            return
+        assert self.current_state is not None
+
+        def _identity_targets() -> dict[int, float]:
+            return {i: self.current_state.motor_state[i].q for i in COMMANDED_ARMSDK_INDICES}
+
+        total_s = ENGAGE_SECONDS + hold_seconds + RELEASE_SECONDS
+        print(f"\n[ENGAGE-ONLY] weight 0 → {max_weight:.2f} → 0 over {total_s:.1f}s; "
+              "arm targets = current encoder q (no motion commanded).")
+        print("[ENGAGE-ONLY] Expected PASS = robot stands normally, no arm twitch.")
+
+        ticks_up = int(ENGAGE_SECONDS * CTRL_HZ)
+        for tick in range(ticks_up):
+            loop_start = time.monotonic()
+            if self._check_velocity_abort(self.current_state):
+                self.aborted = True
+                break
+            alpha = cubic_ease(tick / float(ticks_up))
+            self._set_weight(alpha * max_weight)
+            self._apply_targets(_identity_targets())
+            self._write(publisher)
+            time.sleep(max(0.0, CTRL_DT - (time.monotonic() - loop_start)))
+
+        if not self.aborted:
+            print(f"[ENGAGE-ONLY] Holding weight={max_weight:.2f} for {hold_seconds}s "
+                  "(observe: robot should remain stable, arms should not move).")
+            ticks_hold = int(hold_seconds * CTRL_HZ)
+            for _ in range(ticks_hold):
+                loop_start = time.monotonic()
+                if self._check_velocity_abort(self.current_state):
+                    self.aborted = True
+                    break
+                self._set_weight(max_weight)
+                self._apply_targets(_identity_targets())
+                self._write(publisher)
+                time.sleep(max(0.0, CTRL_DT - (time.monotonic() - loop_start)))
+
+        print(f"[ENGAGE-ONLY] Ramping weight {max_weight:.2f} → 0 over {RELEASE_SECONDS}s...")
+        ticks_down = int(RELEASE_SECONDS * CTRL_HZ)
+        for tick in range(ticks_down):
+            loop_start = time.monotonic()
+            s = tick / float(ticks_down)
+            self._set_weight(max_weight * (1.0 - cubic_ease(s)))
+            self._apply_targets(_identity_targets())
+            self._write(publisher)
+            time.sleep(max(0.0, CTRL_DT - (time.monotonic() - loop_start)))
+        self._set_weight(0.0)
+        for _ in range(10):
+            self._write(publisher)
+            time.sleep(0.01)
+        print("[ENGAGE-ONLY] Done. Loco has full authority.")
+
+    def jog_test(self, publisher: ChannelPublisher,
+                 target_armsdk_idx: int,
+                 amplitude: float = 0.2,
+                 hold_seconds: float = 2.0) -> None:
+        """Gate B — single-joint physical identity jog.
+
+        Commands ONE arm-SDK joint by +amplitude rad from its current encoder q,
+        holds for `hold_seconds`, returns to start, then releases. All OTHER arm
+        joints hold their current encoder q throughout. Validates that arm-SDK
+        index `target_armsdk_idx` drives the *physical motor* the remap table
+        claims it does.
+
+        Critical use case: the remap assumes "23-DOF L_ELBOW_ROLL ≡ arm-SDK
+        L_WRIST_ROLL is the same physical motor" (PKL idx 17 → arm-SDK idx 19).
+        This has NEVER been directly proven on a specific robot — only inferred
+        from Unitree's 23DOF/29DOF chassis-sharing convention. Jogging arm-SDK
+        idx 19 and observing which joint physically moves closes that gap.
+
+        Suggested first-jog targets (safest, smallest arm-of-moment):
+          15 = L_SHOULDER_PITCH  (unambiguous; confirms L-arm wiring)
+          19 = L_WRIST_ROLL      (the key ELBOW_ROLL ≡ WRIST_ROLL test)
+          22 = R_SHOULDER_PITCH  (confirms R-arm wiring; side-swap check)
+
+        Precondition: robot in BalanceStand(), gantry attached, operator on E-stop.
+        """
+        if target_armsdk_idx not in COMMANDED_ARMSDK_INDICES:
+            print(f"[ERROR] arm-SDK idx {target_armsdk_idx} is not in the commanded set "
+                  f"{COMMANDED_ARMSDK_INDICES}. Refusing to jog.")
+            return
+        if not self._wait_for_low_state():
+            return
+        assert self.current_state is not None
+
+        name_lookup = {m: n for _, (m, n) in REMAP_23_TO_ARMSDK.items()}
+        name = name_lookup.get(target_armsdk_idx, f"armsdk_{target_armsdk_idx}")
+        start_q = {i: self.current_state.motor_state[i].q for i in COMMANDED_ARMSDK_INDICES}
+        target_q = dict(start_q)
+        target_q[target_armsdk_idx] = start_q[target_armsdk_idx] + amplitude
+
+        print(f"\n[JOG-TEST] arm-SDK idx={target_armsdk_idx} ({name})")
+        print(f"[JOG-TEST] q_start={start_q[target_armsdk_idx]:+.3f} rad  →  "
+              f"q_target={target_q[target_armsdk_idx]:+.3f} rad  (Δ={amplitude:+.3f} rad)")
+        print(f"[JOG-TEST] OBSERVE PHYSICALLY: expect {name} to move by ~{amplitude} rad.")
+        print("[JOG-TEST] If a DIFFERENT joint moves, the remap is wrong — abort with Ctrl-C.")
+
+        ticks_engage = int(ENGAGE_SECONDS * CTRL_HZ)
+        for tick in range(ticks_engage):
+            loop_start = time.monotonic()
+            if self._check_velocity_abort(self.current_state):
+                self.aborted = True
+                break
+            alpha = cubic_ease(tick / float(ticks_engage))
+            self._set_weight(alpha)
+            interp = {i: (1.0 - alpha) * start_q[i] + alpha * target_q[i]
+                      for i in COMMANDED_ARMSDK_INDICES}
+            self._apply_targets(interp)
+            self._write(publisher)
+            time.sleep(max(0.0, CTRL_DT - (time.monotonic() - loop_start)))
+
+        if not self.aborted:
+            print(f"[JOG-TEST] Holding target for {hold_seconds}s...")
+            ticks_hold = int(hold_seconds * CTRL_HZ)
+            for _ in range(ticks_hold):
+                loop_start = time.monotonic()
+                if self._check_velocity_abort(self.current_state):
+                    self.aborted = True
+                    break
+                self._set_weight(1.0)
+                self._apply_targets(target_q)
+                self._write(publisher)
+                time.sleep(max(0.0, CTRL_DT - (time.monotonic() - loop_start)))
+
+        print(f"[JOG-TEST] Returning to start q over {EASE_OUT_SECONDS}s...")
+        ticks_back = int(EASE_OUT_SECONDS * CTRL_HZ)
+        for tick in range(ticks_back):
+            loop_start = time.monotonic()
+            alpha = cubic_ease(tick / float(ticks_back))
+            interp = {i: (1.0 - alpha) * target_q[i] + alpha * start_q[i]
+                      for i in COMMANDED_ARMSDK_INDICES}
+            self._apply_targets(interp)
+            self._write(publisher)
+            time.sleep(max(0.0, CTRL_DT - (time.monotonic() - loop_start)))
+
+        print(f"[JOG-TEST] Releasing arm_sdk weight over {RELEASE_SECONDS}s...")
+        ticks_rel = int(RELEASE_SECONDS * CTRL_HZ)
+        for tick in range(ticks_rel):
+            loop_start = time.monotonic()
+            s = tick / float(ticks_rel)
+            self._set_weight(1.0 - cubic_ease(s))
+            self._apply_targets(start_q)
+            self._write(publisher)
+            time.sleep(max(0.0, CTRL_DT - (time.monotonic() - loop_start)))
+        self._set_weight(0.0)
+        for _ in range(10):
+            self._write(publisher)
+            time.sleep(0.01)
+        print("[JOG-TEST] Done. Loco has full authority.")
+
+    def run(self, publisher: ChannelPublisher) -> None:
+        if not self._wait_for_low_state():
             return
         self.engage_and_ease_in(publisher)
         if self.aborted:
@@ -365,27 +718,81 @@ def main() -> int:
         description="G1 arm replay via rt/arm_sdk (preserves locomotion).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--pkl", required=True, help="Path to 23-DOF .pkl (joint_angles key)")
+    parser.add_argument("--pkl", default=None,
+                        help="Path to 23-DOF .pkl (joint_angles key). "
+                             "Required for full playback; ignored for --engage-only / --jog-test.")
     parser.add_argument("--iface", default="enp0s31f6",
                         help="Network interface (default: enp0s31f6 for iotlab Linux)")
     parser.add_argument("--domain", type=int, default=0, help="DDS Domain ID (default: 0)")
     parser.add_argument("--speed", type=float, default=0.5,
-                        help="PKL playback speed multiplier (default: 0.5 — conservative first run)")
+                        help="PKL playback speed multiplier (default: 0.5 — conservative first run). "
+                             "May be reduced further by --max-arm-vel / --max-arm-jerk.")
+    parser.add_argument("--max-arm-vel", type=float, default=DEFAULT_MAX_ARM_VEL,
+                        help=f"[T2] Per-joint arm vel cap (rad/s) at runtime. "
+                             f"Default: {DEFAULT_MAX_ARM_VEL}")
+    parser.add_argument("--max-arm-jerk", type=float, default=DEFAULT_MAX_ARM_JERK,
+                        help=f"[T2] Per-joint arm jerk cap (rad/s^3) at runtime. "
+                             f"Default: {DEFAULT_MAX_ARM_JERK}")
     parser.add_argument("--dry-run-map", action="store_true",
                         help="Print the 23→arm-SDK remap for the first frame and exit without DDS.")
+    parser.add_argument("--dry-run-limits", action="store_true",
+                        help="Compute vel/jerk against caps, report required slowdown, and exit without DDS.")
+    parser.add_argument("--ignore-loco-limits", action="store_true",
+                        help="Skip --max-arm-vel / --max-arm-jerk check (use only for debugging).")
+    parser.add_argument("--engage-only", action="store_true",
+                        help="Gate C: ramp arm_sdk weight 0 → --engage-weight → 0 while commanding "
+                             "current encoder q on all arm joints. Validates topic acceptance without motion. "
+                             "No --pkl required.")
+    parser.add_argument("--engage-weight", type=float, default=0.1,
+                        help="Max weight for --engage-only (default: 0.1 — small on first run).")
+    parser.add_argument("--jog-test", type=int, default=None, metavar="ARMSDK_IDX",
+                        help="Gate B: command ONE arm-SDK joint by --jog-amp rad "
+                             "(15=L_SHOULDER_PITCH, 19=L_WRIST_ROLL, 22=R_SHOULDER_PITCH, ...). "
+                             "Validates physical motor identity of the remap. No --pkl required.")
+    parser.add_argument("--jog-amp", type=float, default=0.2,
+                        help="Jog amplitude in rad for --jog-test (default: 0.2).")
     args = parser.parse_args()
 
-    if not Path(args.pkl).exists():
-        print(f"[ERROR] PKL not found: {args.pkl}")
+    gate_mode = args.engage_only or (args.jog_test is not None)
+    if args.engage_only and args.jog_test is not None:
+        print("[ERROR] --engage-only and --jog-test are mutually exclusive.")
         return 1
-    frames = load_pkl(args.pkl)
-    print(f"Loaded {len(frames)} frames × {frames.shape[1]} cols from {args.pkl}")
 
-    print_remap_table(frames[0])
+    frames = None
+    effective_speed = args.speed
+    if gate_mode:
+        print(f"[GATE-MODE] --pkl is ignored. Running "
+              f"{'--engage-only' if args.engage_only else f'--jog-test {args.jog_test}'}.")
+    else:
+        if args.pkl is None:
+            print("[ERROR] --pkl is required for full playback "
+                  "(or pass --engage-only / --jog-test for pre-flight gates).")
+            return 1
+        if not Path(args.pkl).exists():
+            print(f"[ERROR] PKL not found: {args.pkl}")
+            return 1
+        frames = load_pkl(args.pkl)
+        print(f"Loaded {len(frames)} frames × {frames.shape[1]} cols from {args.pkl}")
+        print_remap_table(frames[0])
 
-    if args.dry_run_map:
-        print("\n[DRY-RUN] --dry-run-map set; exiting before DDS init.")
-        return 0
+        if args.dry_run_map:
+            print("\n[DRY-RUN] --dry-run-map set; exiting before limits and DDS init.")
+            return 0
+
+        # [T2] Loco-aware speed negotiation. Pose shape stays intact.
+        if args.ignore_loco_limits:
+            print("\n[WARN] --ignore-loco-limits: skipping T2 trajectory limiting. "
+                  "Hardware may destabilize the balance controller.")
+            effective_speed = args.speed
+        else:
+            effective_speed, diag = compute_loco_speed_cap(
+                frames, args.speed, args.max_arm_vel, args.max_arm_jerk
+            )
+            print_limit_report(diag)
+
+        if args.dry_run_limits:
+            print("\n[DRY-RUN] --dry-run-limits set; exiting before DDS init.")
+            return 0
 
     if not SDK_AVAILABLE:
         print("\n[ERROR] unitree_sdk2py not importable. Install on the deployment machine:")
@@ -394,29 +801,57 @@ def main() -> int:
         return 1
 
     print("=" * 60)
-    print("G1 ARM REPLAY via rt/arm_sdk  (locomotion preserved)")
+    if args.engage_only:
+        print("GATE C — ENGAGE-ONLY PROTOCOL TEST  (no arm motion commanded)")
+    elif args.jog_test is not None:
+        print(f"GATE B — SINGLE-JOINT JOG  (arm-SDK idx={args.jog_test}, Δ={args.jog_amp:+.3f} rad)")
+    else:
+        print("G1 ARM REPLAY via rt/arm_sdk  (locomotion preserved)")
     print("=" * 60)
-    print("SAFETY CHECK: Robot in BalanceStand() or equivalent.")
+    print("SAFETY CHECK: Robot in BalanceStand() (loco active, NOT damping).")
     print("SAFETY CHECK: Operator ready on L1+L2 e-stop.")
-    print(f"SAFETY CHECK: speed={args.speed}  ( < 1.0 recommended on first hardware run )")
+    if gate_mode:
+        print("SAFETY CHECK: Gantry attached recommended for first hardware run.")
+    else:
+        print(f"SAFETY CHECK: requested --speed={args.speed}, "
+              f"effective={effective_speed:.3f} after loco limits.")
     confirm = input("\nType 'YES' to proceed: ").strip()
     if confirm != "YES":
         print("Aborted.")
         return 0
 
     ChannelFactoryInitialize(args.domain, args.iface)
-    controller = ArmSdkLocoController(frames, args.speed)
+    controller = ArmSdkLocoController(frames, effective_speed)
     sub = ChannelSubscriber("rt/lowstate", LowState_)
     sub.Init(controller.on_low_state, 10)
     pub = ChannelPublisher("rt/arm_sdk", LowCmd_)
     pub.Init()
 
     try:
-        controller.run(pub)
+        if args.engage_only:
+            controller.engage_only(pub, max_weight=args.engage_weight)
+        elif args.jog_test is not None:
+            controller.jog_test(pub, target_armsdk_idx=args.jog_test,
+                                amplitude=args.jog_amp)
+        else:
+            controller.run(pub)
     except KeyboardInterrupt:
         print("\n[KEYBOARD INTERRUPT] Forcing ease-out and release.")
         controller.aborted = True
-        controller.ease_out_and_release(pub)
+        # ease_out_and_release assumes a prior playback; for gate modes, just
+        # ramp the weight to zero on whatever target is currently set.
+        if args.engage_only or args.jog_test is not None:
+            for tick in range(int(RELEASE_SECONDS * CTRL_HZ)):
+                s = tick / float(int(RELEASE_SECONDS * CTRL_HZ))
+                controller._set_weight(1.0 - cubic_ease(s))
+                controller._write(pub)
+                time.sleep(CTRL_DT)
+            controller._set_weight(0.0)
+            for _ in range(10):
+                controller._write(pub)
+                time.sleep(0.01)
+        else:
+            controller.ease_out_and_release(pub)
     return 1 if controller.aborted else 0
 
 
