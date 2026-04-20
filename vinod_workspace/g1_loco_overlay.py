@@ -60,6 +60,9 @@ from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowCmd_, LowState_
 from unitree_sdk2py.utils.crc import CRC
 from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient
 from unitree_sdk2py.g1.arm.g1_arm_action_client import G1ArmActionClient, action_map
+from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import (
+    MotionSwitcherClient,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -126,9 +129,22 @@ class ControllerConfig:
 class G1NoFallController:
     """High-level wrapper that never turns off the OEM balance controller."""
 
-    def __init__(self, iface: str, config: ControllerConfig | None = None):
+    def __init__(
+        self,
+        iface: str,
+        config: ControllerConfig | None = None,
+        ensure_normal_mode: bool = True,
+    ):
         self.cfg = config or ControllerConfig()
         ChannelFactoryInitialize(0, iface)
+
+        # Tier 0 - Motion switcher (decides which high-level motion service
+        # owns the robot). Must be "normal" for LocoClient to accept commands.
+        self._switcher = MotionSwitcherClient()
+        self._switcher.SetTimeout(5.0)
+        self._switcher.Init()
+        if ensure_normal_mode:
+            self._ensure_normal_mode()
 
         # Tier 1 - LocoClient (legs + balance + some gestures)
         self._loco = LocoClient()
@@ -152,13 +168,63 @@ class G1NoFallController:
 
         self._wait_for_state(timeout=3.0)
 
+    # ---- Tier 0: Motion switcher --------------------------------------
+
+    def _check_return(self, method_name: str, ret) -> None:
+        """LocoClient methods return (code, data). Raise on non-zero code."""
+        if ret is None:
+            return  # some SDK builds return None on success
+        if isinstance(ret, tuple) and len(ret) >= 1:
+            code = ret[0]
+            if code != 0:
+                raise RuntimeError(
+                    f"{method_name} returned code {code}. "
+                    f"Common causes: robot in wrong mode, service not ready, "
+                    f"or cannot transition from current state."
+                )
+
+    def _ensure_normal_mode(self) -> None:
+        """Check motion mode and select 'normal' if needed.
+
+        G1 EDU exposes multiple high-level services ('ai', 'normal',
+        'advanced'). LocoClient only works in 'normal'. After deploy_real.py
+        or any script that called ReleaseMode(), the switcher may be stuck.
+        """
+        try:
+            status, result = self._switcher.CheckMode()
+        except Exception as e:
+            print(f"[mode] WARNING: CheckMode() raised: {e}")
+            return
+        print(f"[mode] CheckMode() -> status={status} result={result}")
+        current = result.get("name", "") if isinstance(result, dict) else str(result)
+        if current != "normal":
+            print(f"[mode] Current mode '{current}' -> selecting 'normal'...")
+            try:
+                self._switcher.SelectMode("normal")
+                time.sleep(5.0)  # mode switch takes 2-5 seconds
+                status, result = self._switcher.CheckMode()
+                print(f"[mode] After SelectMode: status={status} result={result}")
+            except Exception as e:
+                print(f"[mode] SelectMode('normal') raised: {e}")
+        else:
+            print("[mode] Already in 'normal' mode.")
+
+    def check_mode(self):
+        return self._switcher.CheckMode()
+
+    def select_mode(self, name: str) -> None:
+        self._switcher.SelectMode(name)
+
+    def release_mode(self) -> None:
+        """Release all high-level services. After this, ONLY rt/lowcmd works.
+        Debug helper only. Do NOT call in the demo path."""
+        self._switcher.ReleaseMode()
+
     # ---- Tier 1: LocoClient wrappers (CANNOT fall) --------------------
 
     def stand(self, low: bool = False) -> None:
-        if low:
-            self._loco.LowStand()
-        else:
-            self._loco.HighStand()
+        ret = (self._loco.LowStand if low else self._loco.HighStand)()
+        self._check_return("LowStand" if low else "HighStand", ret)
 
     def walk(
         self,
@@ -176,15 +242,18 @@ class G1NoFallController:
         n = max(1, int(duration * rate_hz))
         dt = duration / n
         for _ in range(n):
-            self._loco.Move(vx, vy, yaw)
+            ret = self._loco.Move(vx, vy, yaw)
+            self._check_return("Move", ret)
             time.sleep(dt)
         self._loco.Move(0.0, 0.0, 0.0)
 
     def damp(self) -> None:
-        self._loco.Damp()
+        ret = self._loco.Damp()
+        self._check_return("Damp", ret)
 
     def zero_torque(self) -> None:
-        self._loco.ZeroTorque()
+        ret = self._loco.ZeroTorque()
+        self._check_return("ZeroTorque", ret)
 
     def squat_to_stand(self) -> None:
         self._loco.Damp()
@@ -433,6 +502,8 @@ Commands (robot self-balances throughout — it will not fall):
     canned NAME                Canned arm gesture (use `list` to see names)
     play PATH                  Play hero PKL on arms only (rt/arm_sdk overlay)
     list                       List canned gesture names
+    mode                       Print current motion-switcher mode
+    setmode NAME               Force mode (normal | ai | advanced)
     help                       Show this menu
     quit                       Exit
 """
@@ -490,6 +561,15 @@ def _interactive(ctrl: G1NoFallController, flip_r: bool) -> None:
                     print("usage: play <pkl_path>")
                     continue
                 ctrl.play_arm_gesture(parts[1], flip_r_shoulder_roll=flip_r)
+            elif op == "mode":
+                print(ctrl.check_mode())
+            elif op == "setmode":
+                if len(parts) < 2:
+                    print("usage: setmode <normal|ai|advanced>")
+                    continue
+                ctrl.select_mode(parts[1])
+                time.sleep(5.0)
+                print(ctrl.check_mode())
             else:
                 print(f"unknown command: {op}   (type `help`)")
         except Exception as e:
