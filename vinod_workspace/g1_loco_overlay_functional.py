@@ -233,10 +233,24 @@ class G1NoFallController:
         yaw: float = 0.0,
         duration: float = 1.0,
     ) -> None:
-        """Repeated Move() at 10 Hz for `duration` seconds, then zero velocity.
+        """
+        Repeated Move() at 10 Hz for `duration` seconds, then zero velocity.
 
         Robot self-balances throughout. No PKL, no joint arrays. Unitree
         handles CoM, ZMP, foot placement, perturbation rejection.
+
+        v = float(parts[1]) if len(parts) > 1 else (0.3 if op == "turn" else 0.2)
+        dur = float(parts[2]) if len(parts) > 2 else 2.0
+        
+        kwargs = {
+                    "fwd": {"vx": v}, 
+                    "back": {"vx": -v},
+                    "left": {"vy": v}, 
+                    "right": {"vy": -v},
+                    "turn": {"yaw": v}
+                }[op]
+
+        ctrl.walk(duration=dur, **kwargs)
         """
         rate_hz = 10.0
         n = max(1, int(duration * rate_hz))
@@ -509,8 +523,14 @@ Commands (robot self-balances throughout — it will not fall):
 """
 
 
-def _interactive(raw, ctrl: G1NoFallController, flip_r: bool) -> None:
+def interactive(raw, ctrl: G1NoFallController, flip_r: bool) -> None:
     print(_MENU)
+
+    """
+    raw: command 
+    ctrl: G1NoFallController (Robot)
+    flip_r: ?
+    """
 
     raw = raw.strip()
 
@@ -603,7 +623,7 @@ def main() -> None:
         ctrl.damp()
         return
 
-    _interactive(ctrl, flip_r=args.flip_r_shoulder_roll)
+    interactive(ctrl, flip_r=args.flip_r_shoulder_roll)
 
 
 if __name__ == "__main__":
