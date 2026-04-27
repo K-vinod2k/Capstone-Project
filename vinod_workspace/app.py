@@ -18,8 +18,6 @@ audio_client.SetVolume(100)
 
 app = Flask(__name__)
 
-
-
 async def pose_robot(robot, movement):
     if movement:
         robot.play_arm_gesture(movement, flip_r_shoulder_roll=False)
@@ -41,9 +39,21 @@ async def move_robot(robot, data):
     "right": {"vy": -v},
     "turn": {"yaw": v}
     """
+    
     if data:
-        #robot.walk(data)
-        return
+        v = data["velocity"]
+        duration = data["duration"]
+
+        mapping = {
+            "forward": {"vx": v, "vy": 0.0, "yaw": 0.0, "duration": duration},
+            "backward": {"vx": -v, "vy": 0.0, "yaw": 0.0, "duration": duration},
+            "left": {"vx": 0.0, "vy": v, "yaw": 0.0, "duration": duration},
+            "right": {"vx": 0.0, "vy": -v, "yaw": 0.0, "duration": duration}
+        }
+
+        motion_data = mapping[data['direction']]
+        
+        robot.walk(motion_data['vx'], motion_data['vy'], motion_data['yaw'], motion_data['direction'])
 
 async def talk_robot(text):
     if text:
@@ -91,10 +101,10 @@ async def process_movement():
     #asyncio.create_task(blink_robot(text))
     #asyncio.create_task(pose_robot(ctrl, pose))
 
+    # pose_robot(ctrl, pose),
     
     result = await asyncio.gather(
         talk_robot(text), #blink_robot(text),
-        pose_robot(ctrl, pose)
         move_robot(ctrl, move)
     )
     
